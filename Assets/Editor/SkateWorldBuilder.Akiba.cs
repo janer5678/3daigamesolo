@@ -224,6 +224,8 @@ public static partial class SkateWorldBuilder
             akReserved.Add(new Vector2(bz - 24f, bz + 24f));
             akNoStall.Add(new Vector3(1f, bz - 24f, bz + 24f)); akNoStall.Add(new Vector3(-1f, bz - 24f, bz + 24f));
         }
+        AkPlanTiers();
+        foreach (var e in akEntries) akNoStall.Add(new Vector3(e.side, e.z0, e.z1));
         ark = new System.Random(19990629);
         floorAt = (x, z) => Mathf.Abs(x) > Road && Mathf.Abs(x) < Front + 0.5f ? Kerb : 0f;
         ImportAkibaTextures();
@@ -260,6 +262,7 @@ public static partial class SkateWorldBuilder
         AkBuildings();
         AkSideStreets();
         AkFlow();
+        AkTiers();
         AkMedian();
         AkRoute();
         AkCurvyRails();
@@ -542,6 +545,7 @@ public static partial class SkateWorldBuilder
         {
             float y = AR(5f, Mathf.Min(Mathf.Max(6f, h - 3f), 30f));
             float bw = Mathf.Min(w - 1f, AR(5f, 9f));
+            if (TierClash(-face, lot.yMin, lot.yMax, y - bw / 5.4f, y + bw / 5.4f)) continue;
             AK("sign_h_" + AI(0, 6), ark.NextDouble() < 0.3 ? "f" : "e").Panel(new Vector3(fx + face * 0.2f, y, lot.center.y + AR(-(w - bw) / 2f, (w - bw) / 2f)),
                 Rt(n) * (bw / 2f), Vector3.up * (bw / 5.4f));
         }
@@ -554,6 +558,7 @@ public static partial class SkateWorldBuilder
             float y = AR(4.5f, Mathf.Max(4.6f, Mathf.Min(h, 30f) - sh - 0.5f)) + sh / 2f;
             string st = ark.NextDouble() < 0.35 ? "f" : "e";
             string tex = "sign_v_" + AI(0, 8);
+            if (TierClash(-face, z - 1f, z + 1f, y - sh / 2f, y + sh / 2f)) continue;
             Vector3 sc = new Vector3(fx + face * 0.85f, y, z);
             // a sign on each side of a thin frame (not inside it)
             AK(tex, st).Panel(sc + Vector3.forward * 0.09f, Rt(Vector3.forward) * 0.65f, Vector3.up * sh / 2f);
@@ -575,9 +580,9 @@ public static partial class SkateWorldBuilder
         AkStalls(fx, lot, face);
         // balconies, and on taller buildings, more of them going up
         if (h > 14f && ark.NextDouble() < 0.6)
-            AkPorch(fx, face, AR(7f, Mathf.Min(14f, h - 4f)), lot.center.y + AR(-w / 4f, w / 4f), Mathf.Min(6f, w - 2f));
+            TryPorch(fx, face, AR(7f, Mathf.Min(14f, h - 4f)), lot.center.y + AR(-w / 4f, w / 4f), Mathf.Min(6f, w - 2f));
         if (h > 30f && ark.NextDouble() < 0.6)
-            AkPorch(fx, face, AR(20f, Mathf.Min(34f, h - 4f)), lot.center.y + AR(-w / 4f, w / 4f), Mathf.Min(6f, w - 2f));
+            TryPorch(fx, face, AR(20f, Mathf.Min(34f, h - 4f)), lot.center.y + AR(-w / 4f, w / 4f), Mathf.Min(6f, w - 2f));
         if (tall) akAnchors.Add(new Vector3(fx, h, lot.center.y));
     }
 
@@ -656,6 +661,12 @@ public static partial class SkateWorldBuilder
             }
             z += AR(0.5f, 3f);
         }
+    }
+
+    // a balcony, unless the decks are in the way
+    static void TryPorch(float fx, float face, float y, float zc, float w)
+    {
+        if (!TierClash(-face, zc - w / 2f, zc + w / 2f, y - 1f, y + 2f)) AkPorch(fx, face, y, zc, w);
     }
 
     static void AkPorch(float fx, float face, float y, float zc, float w)
@@ -969,6 +980,7 @@ public static partial class SkateWorldBuilder
             if (Mathf.Abs(z) < RailHalf + 6f || Reserved(z)) continue;
             bool cross = false;
             foreach (var cz in CrossZ) if (Mathf.Abs(z - cz) < CrossHalf + 4f) cross = true;
+            foreach (var hz in new[] { -446f, -60f, 120f, 400f }) if (Mathf.Abs(z - hz) < 12f) cross = true;   // the rocket cars parked in the middle
             if (cross) continue;
             float k = (float)ark.NextDouble();
             float dir = ark.NextDouble() < 0.5 ? 1f : -1f;
@@ -1149,6 +1161,7 @@ public static partial class SkateWorldBuilder
             float px = s * (Road + 3.2f);
             akNoStall.Add(new Vector3(s, kz - 6f, kz + 6f));
             if (Reserved(kz, 8f)) continue;
+            if (TierOver(s, Mathf.Min(kz, a.z) - 16f, Mathf.Max(kz, a.z) + 10f)) continue;
             Hump("Kicker", new Vector3(px, Kerb, kz), new Vector3(0f, 0f, dir), 4f, 26f, 3.6f, RampSide2);
             BoostArrow(new Vector3(px, Kerb, kz - dir * 12f), new Vector3(0f, 0f, dir), 24f);
             var c = cols[made % cols.Length];
@@ -1164,7 +1177,7 @@ public static partial class SkateWorldBuilder
         {
             var a = tops[AI(0, tops.Count)];
             var b = tops.Find(p => Mathf.Sign(p.x) != Mathf.Sign(a.x) && Mathf.Abs(p.z - a.z) > 30f && Mathf.Abs(p.z - a.z) < 110f && Mathf.Abs(p.y - a.y) < 24f);
-            if (b == Vector3.zero) continue;
+            if (b == Vector3.zero || FlyingCarZone(a.z, b.z)) continue;
             float mid = Mathf.Max(a.y, b.y) + AR(2f, 10f);
             Vector3 aa = a + new Vector3(-Mathf.Sign(a.x) * 2.6f, 0.6f, 0f), bb = b + new Vector3(-Mathf.Sign(b.x) * 2.6f, 0.6f, 0f);
             CurvyRail("Street rail", new[] { aa, Vector3.Lerp(aa, bb, 0.25f) + new Vector3(AR(-4f, 4f), AR(3f, 8f), AR(-8f, 8f)), new Vector3(AR(-6f, 6f), mid, (a.z + b.z) / 2f),
@@ -1505,5 +1518,8 @@ public static partial class SkateWorldBuilder
         Shot(cam, new Vector3(4f, 2.5f, -165f), new Vector3(15.8f, 16f, -135f), "a11-updraft.png");
         Shot(cam, new Vector3(-70f, 80f, -60f), new Vector3(-40f, 40f, 40f), "a12-rooftops.png");
         Shot(cam, new Vector3(26f, 3f, 160f), new Vector3(90f, 6f, 160f), "a13-lanterns.png");
+        Shot(cam, new Vector3(-3f, 14f, 30f), new Vector3(15f, 18f, 120f), "a14-decks-east.png");
+        Shot(cam, new Vector3(5f, 28f, 110f), new Vector3(-16f, 26f, 220f), "a15-decks-west.png");
+        Shot(cam, new Vector3(0f, 75f, -80f), new Vector3(0f, 15f, 100f), "a16-decks-overview.png");
     }
 }

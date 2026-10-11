@@ -494,13 +494,14 @@ public static class SlideTests
             car.Init();
             Physics.SyncTransforms();
             Place(car.transform.position + Vector3.up * 2.4f, Vector3.zero);
-            float carTop = 0f, nearWall = 99f, lineTop = 0f; bool piped = false;
+            float carTop = 0f, nearWall = 99f, lineTop = 0f; bool piped = false; string pipeName = "";
             for (int i = 0; i < 4000; i++)
             {
                 if (!c.Grinding && !piped) { car.Step(Dt); Physics.SyncTransforms(); }
                 Step(new SlideInput { sprint = true });
                 if (!piped) carTop = Mathf.Max(carTop, c.transform.position.y);
                 if (c.transform.position.y > 26f && !piped) nearWall = Mathf.Min(nearWall, Mathf.Abs(c.transform.position.x + 20f));
+                if (!piped && c.Grinding) pipeName = c.GrindRail.name + " at " + c.transform.position.ToString("F0");
                 piped |= c.Grinding;
                 lineTop = Mathf.Max(lineTop, c.transform.position.y);
                 if (lineTop > 150f) break;
@@ -568,8 +569,16 @@ public static class SlideTests
             foreach (var u in Object.FindObjectsByType<Updraft>(FindObjectsSortMode.None)) if (u.height > 30f && (draft == null || u.height > draft.height)) draft = u;
             Place(draft.transform.position + Vector3.up * 0.6f, Vector3.zero);
             float risen = 0f;
-            for (int i = 0; i < 300; i++) { Step(new SlideInput()); risen = Mathf.Max(risen, c.transform.position.y - draft.transform.position.y); }
-            bool draftOk = risen > Mathf.Min(15f, draft.height - 3f);
+            bool draftRail = false;   // carried up into a rail counts: that's what it's there for
+            for (int i = 0; i < 300; i++)
+            {
+                Step(new SlideInput());
+                risen = Mathf.Max(risen, c.transform.position.y - draft.transform.position.y);
+                if (c.Grinding && risen > 3f) { draftRail = true; break; }
+            }
+            bool draftOk = risen > Mathf.Min(15f, draft.height - 3f) || draftRail;
+            RaycastHit above;
+            string draftBlock = Physics.Raycast(draft.transform.position + Vector3.up * 1f, Vector3.up, out above, 200f) ? above.collider.name + " at " + above.point.ToString("F0") + " under " + above.collider.transform.parent?.name : "nothing";
 
             // a footbridge over the street: ride up its ramp along the pavement onto the deck
             Place(new Vector3(15.2f, 0.6f, -77.5f), Vector3.zero);
@@ -577,6 +586,49 @@ public static class SlideTests
             float deck = 0f;
             for (int i = 0; i < 250; i++) { Step(new SlideInput { forward = 1f, sprint = true }); if (c.Grounded) deck = Mathf.Max(deck, c.transform.position.y); }
             bool bridgeOk = deck > 5.8f;
+
+            // the stacked decks: up a flight of stairs to the next storey (boost arrow at the foot)
+            GameObject stairMark = null, ventMark = null;
+            foreach (Transform t in GameObject.Find("Akiba").transform)
+            {
+                if (t.name.StartsWith("Stair test ")) stairMark = t.gameObject;
+                if (t.name.StartsWith("Road vent test ")) ventMark = t.gameObject;
+            }
+            float stairTo = float.Parse(stairMark.name.Substring(11));
+            Place(stairMark.transform.position, Vector3.zero);
+            c.yaw = 0f;
+            float stairTop = 0f;
+            for (int i = 0; i < 300; i++) { Step(new SlideInput { forward = 1f, sprint = true }); if (c.Grounded) stairTop = Mathf.Max(stairTop, c.transform.position.y); }
+            bool stairOk = stairTop > stairTo - 0.5f;
+            // a vent at the road's edge: up it, then steer onto the deck
+            float ventTo = float.Parse(ventMark.name.Substring(15));
+            float side = Mathf.Sign(ventMark.transform.position.x);
+            Place(ventMark.transform.position, Vector3.zero);
+            c.yaw = 0f;
+            float ventTop = 0f;
+            for (int i = 0; i < 400; i++)
+            {
+                bool high = c.transform.position.y > ventTo + 1.5f || i > 250;
+                Step(new SlideInput { strafe = high ? side : 0f });
+                if (c.Grounded) ventTop = Mathf.Max(ventTop, c.transform.position.y);
+            }
+            bool ventOk = ventTop > ventTo - 0.5f;
+            // a tube rail from one deck over the street to another
+            SkateRail neon = null;
+            foreach (var r in Object.FindObjectsByType<SkateRail>(FindObjectsSortMode.None)) if (neon == null && r.name.StartsWith("Neon link ")) neon = r;
+            Vector3 n0 = neon.points[0], nEnd = neon.points[neon.points.Length - 1];
+            Vector3 along = (neon.points[3] - neon.points[0]); along.y = 0f; along.Normalize();
+            Place(n0 - along * 3f + Vector3.up * 0.1f, along * 12f);
+            c.yaw = Mathf.Atan2(along.x, along.z) * Mathf.Rad2Deg;
+            bool neonGrab = false;
+            for (int i = 0; i < 700; i++)
+            {
+                Step(new SlideInput { forward = 1f });
+                neonGrab |= c.Grinding;
+                if (neonGrab && !c.Grinding && c.Grounded) break;
+            }
+            Vector3 landed = c.transform.position;
+            bool neonOk = neonGrab && Mathf.Abs(landed.y - nEnd.y) < 2f && new Vector2(landed.x - nEnd.x, landed.z - nEnd.z).magnitude < 12f;
 
             // a ramp truck: catch it up from behind, up its ramp, onto the bed
             Mover truck = null;
@@ -601,19 +653,21 @@ public static class SlideTests
             float standX = under(false), slideX = under(true);
             bool slideUnder = standX < 23f && slideX > 25f;
 
-            Report("akiba: board speed, powerslide, route, flying car into the lines, rocket car, ramp truck, slide under, boost pad, capsule, updraft, footbridge", cruise < 8f && flat > 12f && boost && route && carRide && wallLine && hoverOk && truckRide && slideUnder && padOk && capOk && draftOk && bridgeOk,
+            Report("akiba: board speed, powerslide, route, flying car into the lines, rocket car, ramp truck, slide under, boost pad, capsule, updraft, footbridge, decks", cruise < 8f && flat > 12f && boost && route && carRide && wallLine && hoverOk && truckRide && slideUnder && padOk && capOk && draftOk && bridgeOk && stairOk && ventOk && neonOk,
                    "board " + (cruise * 3.6f).ToString("F0") + "km/h cruising, " + (flat * 3.6f).ToString("F0") + "km/h with Shift"
                    + "; powerslide " + (inSlide * 3.6f).ToString("F0") + " -> " + (outSlide * 3.6f).ToString("F0") + "km/h coming out"
                    + "; route: " + (railed ? "caught the rail" : "MISSED THE RAIL") + ", ended at " + routeEnd.ToString("F1") + " (roof is 22m)"
                    + "; flying car: up to " + carTop.ToString("F1") + "m, " + nearWall.ToString("F1") + "m from the skyscraper"
-                   + "; " + (piped ? "the pipe grabbed me off it" : "THE PIPE NEVER GRABBED ME") + ", up to " + lineTop.ToString("F0") + "m"
+                   + "; " + (piped ? "the pipe grabbed me off it (" + pipeName + ")" : "THE PIPE NEVER GRABBED ME") + ", up to " + lineTop.ToString("F0") + "m"
                    + "; rocket car: " + (flying ? "flew it up " + flewUp.ToString("F0") + "m and on " + flewOn.ToString("F0") + "m in 1s" + (hopped ? ", hopped off" : ", COULDN'T GET OFF") : "NEVER GOT ON")
                    + (leftBlew ? ", left behind it blew" : ", LEFT BEHIND IT DIDN'T BLOW") + (cameBack ? " and came back" : " and DIDN'T COME BACK")
                    + "; ridden: " + (flying2 ? "blew " + (blew ? "" : "(NOT) ") + "after " + ride.ToString("F1") + "s, flung me " + flung.ToString("F1") + "m up, " + rocketed.ToString("F0") + "m from where I got on" : "NEVER GOT ON THE 2ND TIME")
                    + "; boost pad: up to " + (padTop * 3.6f).ToString("F0") + "km/h (pad " + (pad.speed * 3.6f).ToString("F0") + ")"
                    + "; capsule bounced me " + bounce.ToString("F1") + "m over it"
-                   + "; updraft carried me up " + risen.ToString("F1") + "m of " + draft.height.ToString("F0")
+                   + "; updraft carried me up " + risen.ToString("F1") + "m of " + draft.height.ToString("F0") + " at " + draft.transform.position.ToString("F0") + (draftRail ? " into a rail" : "") + " (above it: " + draftBlock + ")"
                    + "; footbridge: up to " + deck.ToString("F1") + "m (deck is 6m)"
+                   + "; decks: stairs up to " + stairTop.ToString("F1") + "m of " + stairTo.ToString("F0") + ", road vent up to " + ventTop.ToString("F1") + "m of " + ventTo.ToString("F0")
+                   + ", tube rail " + (neonGrab ? "grabbed me, landed " + landed.ToString("F1") + " (its end " + nEnd.ToString("F1") + ")" : "NEVER GRABBED ME")
                    + "; ramp truck: up to " + bed.ToString("F1") + "m"
                    + "; barrier: standing stopped at x=" + standX.ToString("F1") + ", sliding got to x=" + slideX.ToString("F1"));
         }

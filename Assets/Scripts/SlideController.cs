@@ -142,6 +142,7 @@ public class SlideController : MonoBehaviour
     public bool Piloting { get { return piloting != null; } }
     public bool Flipping { get { return flip >= 0f; } }
     public bool Grinding { get { return grindRail != null; } }
+    public SkateRail GrindRail { get { return grindRail; } }
     public string TrickName { get { return grindRail != null ? GrindStyles[grindStyle].name : null; } }
     public Vector3 Velocity { get { return rb.linearVelocity; } }
     public float Speed { get { return rb.linearVelocity.magnitude; } }
