@@ -24,6 +24,8 @@ public class SlideController : MonoBehaviour
     public Transform board;
     [Tooltip("The skater, seen in third person. Children: Body, Leg L, Leg R (pivots at the hips).")]
     public Transform rider;
+    [Tooltip("Sparks that fly off the rail while you grind.")]
+    public ParticleSystem sparks;
 
     [Header("Look")]
     public float mouseSensitivity = 2f;
@@ -57,8 +59,8 @@ public class SlideController : MonoBehaviour
     [Tooltip("How hard pressing against your direction (S) brakes on the board.")]
     public float boardBrake = 22f;
     [Tooltip("Gravity multiplier while on the board. A touch lighter than on foot; the board's jump is stronger to match.")]
-    public float boardGravityScale = 2.1f;
-    public float boardJumpSpeed = 7f;
+    public float boardGravityScale = 2.8f;
+    public float boardJumpSpeed = 7.9f;
     [Tooltip("Overall speed cap, mostly reached going downhill on the board.")]
     public float maxSpeed = 22f;
 
@@ -82,8 +84,10 @@ public class SlideController : MonoBehaviour
 
     [Header("Air")]
     [Tooltip("Gravity multiplier. 1 is Unity's default; higher is less floaty.")]
-    public float gravityScale = 2.2f;
-    public float jumpSpeed = 6.2f;
+    public float gravityScale = 3f;
+    public float jumpSpeed = 7.1f;
+    [Tooltip("Extra gravity on the way down, so jumps snap back to the ground instead of hanging.")]
+    public float fallBoost = 1.35f;
     [Tooltip("How quickly you can change direction in the air. Nothing pressed keeps your momentum.")]
     public float airAccel = 24f;
     [Tooltip("Degrees per second you can turn fast momentum in the air.")]
@@ -98,6 +102,7 @@ public class SlideController : MonoBehaviour
     public bool OnBoard { get; private set; }
     public bool Locked { get { return locked; } }
     public bool Grinding { get { return grindRail != null; } }
+    public bool Boardslide { get { return grindRail != null && boardslide; } }
     public Vector3 Velocity { get { return rb.linearVelocity; } }
     public float Speed { get { return rb.linearVelocity.magnitude; } }
 
@@ -117,6 +122,8 @@ public class SlideController : MonoBehaviour
     float noRailTimer;     // just got off a rail: don't lock straight back on
 
     Quaternion boardRot = Quaternion.identity;
+    Vector3 visualOffset;  // eases the camera, board and rider over when the body snaps onto a rail
+    bool boardslide;       // grinding with the board across the rail rather than along it
     float flip = -1f;      // kickflip progress 0..1, or <0 when not flipping
     float stride;          // walking leg swing
     Transform body, legL, legR;
@@ -148,6 +155,7 @@ public class SlideController : MonoBehaviour
         rb.linearVelocity = Vector3.zero;
         grindRail = null;
         noRailTimer = noLockTimer = 0f;
+        visualOffset = Vector3.zero;
         flip = -1f;
         Vector3 f = s.forward;
         yaw = Mathf.Atan2(f.x, f.z) * Mathf.Rad2Deg;
@@ -257,7 +265,9 @@ public class SlideController : MonoBehaviour
         float top = OnBoard ? boardSpeed : walkSpeed;
 
         Vector3 v = rb.linearVelocity;
-        v += Physics.gravity * ((OnBoard ? boardGravityScale : gravityScale) - 1f) * dt;
+        float g = OnBoard ? boardGravityScale : gravityScale;
+        if (!Grounded && v.y < 0f) g *= fallBoost;
+        v += Physics.gravity * (g - 1f) * dt;
         if (Grounded && steep) { }   // locked to a wall: gravity and the ramp do the work
         else if (Grounded)
         {
@@ -359,6 +369,12 @@ public class SlideController : MonoBehaviour
         // keep most of your speed even coming in at an angle
         float speed = Mathf.Max(Mathf.Abs(Vector3.Dot(v, rd)), flatV.magnitude * 0.8f, grindMinSpeed);
         grindRail = best; grindSeg = bestSeg; grindU = bestU;
+        // the body snaps onto the rail straight away, but what you see slides over onto it
+        Vector3 onRail = Vector3.Lerp(best.points[bestSeg], best.points[bestSeg + 1], bestU) + Vector3.up * RideHeight(best);
+        visualOffset += p - onRail;
+        // come in from the side and the board turns across the rail (a boardslide); come in along it and you ride it on your trucks
+        Vector3 railFlat = new Vector3(rd.x, 0f, rd.z) * sign;
+        boardslide = Vector3.Angle(heading, railFlat) > 35f;
         grindSpeed = sign * speed;
         locked = false;
     }
@@ -423,14 +439,16 @@ public class SlideController : MonoBehaviour
     void LateUpdate()
     {
         float dt = Time.deltaTime;
+        visualOffset = Vector3.Lerp(visualOffset, Vector3.zero, 1f - Mathf.Exp(-16f * dt));
+        if (visualOffset.sqrMagnitude < 1e-6f) visualOffset = Vector3.zero;
         if (cam != null)
         {
             Quaternion view = Quaternion.Euler(pitch, yaw, 0f);
-            Vector3 eye = transform.position + Vector3.up * (eyeHeight - ball.radius);
+            Vector3 eye = transform.position + visualOffset + Vector3.up * (eyeHeight - ball.radius);
             if (thirdPerson)
             {
                 // orbit behind you, pulled in if something's in the way
-                Vector3 pivot = transform.position + Vector3.up * (camPivotHeight - ball.radius);
+                Vector3 pivot = transform.position + visualOffset + Vector3.up * (camPivotHeight - ball.radius);
                 Vector3 back = view * Vector3.back;
                 float dist = camDistance;
                 foreach (var h in Physics.SphereCastAll(pivot, 0.25f, back, camDistance, ~0, QueryTriggerInteraction.Ignore))
@@ -455,8 +473,7 @@ public class SlideController : MonoBehaviour
         }
 
         Vector3 up = Grinding ? Vector3.up : (Grounded ? groundNormal : Vector3.up);
-        Vector3 feet = transform.position - up * ball.radius;
-        if (Grinding) feet = transform.position - Vector3.up * ball.radius;
+        Vector3 feet = transform.position + visualOffset - up * ball.radius;
 
         if (board != null)
         {
@@ -467,11 +484,33 @@ public class SlideController : MonoBehaviour
                 if (heading.magnitude < 1f) heading = Vector3.ProjectOnPlane(Quaternion.Euler(0f, yaw, 0f) * Vector3.forward, up);
                 if (heading.sqrMagnitude < 0.01f) heading = Vector3.ProjectOnPlane(boardRot * Vector3.forward, up);   // facing straight at a wall
                 Quaternion want = Quaternion.LookRotation(heading, up);
-                boardRot = Quaternion.Slerp(boardRot, want, 1f - Mathf.Exp(-14f * dt));
+                float turnIn = 14f;
+                if (Grinding)
+                {
+                    // locked to the rail: along it on the trucks, or swung across it for a boardslide, snapping in quickly
+                    Vector3[] pts = grindRail.points;
+                    Vector3 along = (pts[grindSeg + 1] - pts[grindSeg]).normalized * Mathf.Sign(grindSpeed);
+                    want = Quaternion.LookRotation(along, Vector3.up) * (boardslide ? Quaternion.Euler(0f, 90f, 0f) : Quaternion.identity);
+                    turnIn = 30f;
+                }
+                boardRot = Quaternion.Slerp(boardRot, want, 1f - Mathf.Exp(-turnIn * dt));
                 // spin round the middle of the deck rather than the wheels
                 Quaternion r = boardRot * Quaternion.AngleAxis(spin, Vector3.forward);
                 Vector3 mid = Vector3.up * 0.13f;
                 board.SetPositionAndRotation(feet + up * pop + boardRot * mid - r * mid, r);
+            }
+        }
+
+        if (sparks != null)
+        {
+            // sparks off the rail where the board's touching it, thrown out behind you
+            var em = sparks.emission;
+            em.enabled = Grinding;
+            if (Grinding)
+            {
+                Vector3 back = -rb.linearVelocity.normalized;
+                sparks.transform.SetPositionAndRotation(feet + Vector3.up * 0.06f,
+                    Quaternion.LookRotation((back + Vector3.up * 0.6f).normalized, Vector3.up));
             }
         }
 
@@ -490,7 +529,7 @@ public class SlideController : MonoBehaviour
         {
             Vector3 deckTop = up * 0.17f;
             rider.SetPositionAndRotation(feet + deckTop + up * pop * 0.85f, boardRot * Quaternion.Euler(0f, 90f, 0f));
-            stance = 0.26f; crouch = pop > 0f ? 0.22f : 0.1f;
+            stance = 0.26f; crouch = pop > 0f ? 0.22f : Grinding ? 0.2f : 0.1f;
             stride = 0f;
         }
         else

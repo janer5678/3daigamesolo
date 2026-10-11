@@ -209,7 +209,7 @@ public static class SlideTests
         // coming at it from an angle, or straight across, it still snaps on and carries you along it
         string angles = "";
         bool allAngles = true;
-        foreach (float a in new[] { 45f, 90f })
+        foreach (float a in new[] { 20f, 45f, 90f })
         {
             drop(690f);
             Vector3 p = new Vector3(690f, y + 0.5f + 0.4f + 0.5f, 18.15f + 0.6f);
@@ -218,10 +218,11 @@ public static class SlideTests
             Physics.SyncTransforms();
             bool caught = false;
             for (int i = 0; i < 40 && !caught; i++) { Step(new SlideInput { push = true }); caught = c.Grinding; }
+            bool slide = c.Boardslide;
             for (int i = 0; i < 10 && c.Grinding; i++) Step(new SlideInput { push = true });
-            bool along = caught && Mathf.Abs(c.transform.position.z - 18f) < 0.05f && Mathf.Abs(c.Velocity.x) > 3f;
+            bool along = caught && slide == (a > 35f) && Mathf.Abs(c.transform.position.z - 18f) < 0.05f && Mathf.Abs(c.Velocity.x) > 3f;
             allAngles &= along;
-            angles += " " + a.ToString("F0") + " degrees: " + (along ? "snapped on, grinding at " + (Mathf.Abs(c.Velocity.x) * 3.6f).ToString("F0") + "km/h" : "missed") + ";";
+            angles += " " + a.ToString("F0") + " degrees: " + (along ? "snapped on" + (slide ? " (boardslide)" : " (on the trucks)") + ", grinding at " + (Mathf.Abs(c.Velocity.x) * 3.6f).ToString("F0") + "km/h" : "missed") + ";";
         }
 
         Report("board locks onto rails", rodeToEnd && jumpedOff && steppedOff && allAngles,

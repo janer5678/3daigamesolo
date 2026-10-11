@@ -12,7 +12,7 @@ First person (press **V** for third person). You walk by default; **hold Shift t
 |---|---|
 | **Mouse** | look |
 | **WASD** | walk (about 20 km/h, snappy) |
-| **Shift** (hold) | ride the board: builds to about 54 km/h, keeps downhill speed (capped about 79 km/h); Shift alone rolls you forward; A/D carve sharp turns without losing speed, S brakes; the board locks onto ramps, so you can ride up quarterpipe walls and over funboxes without flying off (kicker lips still launch you), and onto rails: get near one at about its height, from any angle (along it, across it, or dropping onto it), and you snap on and grind along it until you jump (Space) or let go of Shift |
+| **Shift** (hold) | ride the board: builds to about 54 km/h, keeps downhill speed (capped about 79 km/h); Shift alone rolls you forward; A/D carve sharp turns without losing speed, S brakes; the board locks onto ramps, so you can ride up quarterpipe walls and over funboxes without flying off (kicker lips still launch you), and onto rails: get near one at about its height, from any angle (along it, across it, or dropping onto it), and you slide onto it and grind (come in from the side and it's a boardslide, across the rail; come in along it and you ride it on your trucks; sparks either way) until you jump (Space) or let go of Shift |
 | **Space** | jump (a short hop; you can steer in the air with WASD); jumps you off a rail |
 | **K** | kickflip (just an animation) |
 | **V** | switch between first and third person |

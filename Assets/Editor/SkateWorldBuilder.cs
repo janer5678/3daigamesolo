@@ -760,6 +760,7 @@ public static class SkateWorldBuilder
         ctrl.cam = cam;
         ctrl.board = BuildBoard(root.transform);
         ctrl.rider = BuildRider(root.transform);
+        ctrl.sparks = BuildSparks(root.transform);
         return ctrl;
     }
 
@@ -876,6 +877,44 @@ public static class SkateWorldBuilder
         root.Find("Body").localPosition = new Vector3(0f, 0.9f, 0f);
         root.gameObject.SetActive(false);
         return root;
+    }
+
+    // little streaks of light thrown off the rail while you grind (the controller turns them on and off)
+    static ParticleSystem BuildSparks(Transform parent)
+    {
+        var go = new GameObject("Sparks", typeof(ParticleSystem));
+        go.transform.SetParent(parent, false);
+        var ps = go.GetComponent<ParticleSystem>();
+        ps.Stop(true, ParticleSystemStopBehavior.StopEmittingAndClear);
+        var main = ps.main;
+        main.playOnAwake = true;
+        main.loop = true;
+        main.startLifetime = new ParticleSystem.MinMaxCurve(0.15f, 0.35f);
+        main.startSpeed = new ParticleSystem.MinMaxCurve(2.5f, 6f);
+        main.startSize = new ParticleSystem.MinMaxCurve(0.025f, 0.05f);
+        main.startColor = new ParticleSystem.MinMaxGradient(new Color(1f, 0.95f, 0.6f), new Color(1f, 0.6f, 0.3f));
+        main.gravityModifier = 1.5f;
+        main.simulationSpace = ParticleSystemSimulationSpace.World;
+        main.maxParticles = 300;
+        var em = ps.emission;
+        em.rateOverTime = 90f;
+        em.enabled = false;
+        var shape = ps.shape;
+        shape.shapeType = ParticleSystemShapeType.Cone;
+        shape.angle = 30f;
+        shape.radius = 0.05f;
+        var fade = ps.colorOverLifetime;
+        fade.enabled = true;
+        var grad = new Gradient();
+        grad.SetKeys(new[] { new GradientColorKey(Color.white, 0f), new GradientColorKey(new Color(1f, 0.5f, 0.3f), 1f) },
+                     new[] { new GradientAlphaKey(1f, 0f), new GradientAlphaKey(0f, 1f) });
+        fade.color = grad;
+        var r = go.GetComponent<ParticleSystemRenderer>();
+        r.renderMode = ParticleSystemRenderMode.Stretch;
+        r.velocityScale = 0.05f;
+        r.lengthScale = 1f;
+        r.sharedMaterial = Mat("Sparks", "Sprites/Default");
+        return ps;
     }
 
     static Transform RiderPart(string name, Transform root, SkateMeshKit kit)
