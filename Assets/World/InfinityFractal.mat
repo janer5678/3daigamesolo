@@ -31,7 +31,10 @@ Material:
     - _Glow: 1.6
     - _HueSpeed: 0.025
     - _HueSpread: 0.0035
+    - _Pulse: 0.8
     - _Saturation: 0.8
+    - _Sway: 0.9
+    - _Zoom: 0.18
     m_Colors:
     - _Fog: {r: 0, g: 0, b: 0, a: 1}
   m_BuildTextureStacks: []

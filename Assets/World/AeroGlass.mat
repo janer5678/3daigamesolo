@@ -29,11 +29,13 @@ Material:
     - _FogHeight: 300
     - _FogMax: 0.85
     - _Gloss: 0.65
+    - _GridCell: 2
     - _Rim: 0.45
     - _Spec: 1.4
     - _SpecPower: 120
     m_Colors:
     - _Color: {r: 1, g: 1, b: 1, a: 1}
+    - _GridColor: {r: 0.85, g: 1, b: 1, a: 0.22}
     - _Haze: {r: 0.82, g: 0.93, b: 1, a: 1}
     - _HazeHigh: {r: 0.62, g: 0.84, b: 1, a: 1}
     - _SkyLow: {r: 0.85, g: 0.95, b: 1, a: 1}

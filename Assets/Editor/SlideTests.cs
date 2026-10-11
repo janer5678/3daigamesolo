@@ -647,68 +647,78 @@ public static class SlideTests
 
     static float YawTo(Vector3 from, Vector3 to) { return Mathf.Atan2(to.x - from.x, to.z - from.z) * Mathf.Rad2Deg; }
 
-    // Infinity: down a bridge from the great plaza to the next generation's tower; up a flared bank and
-    // back down it; from the tip of a smallest tower a launch pad throws you home onto the great plaza; and
-    // you can grind a bridge's edge
+    // Infinity: it goes on for ever. Ride from the first tower down a bridge to the tower below; drop 60
+    // layers down and it's built there too, and the bridges there work just the same; and it only keeps what's
+    // near you (it doesn't pile up); up a flared bank and back down it; grind a bridge's edge
     public static void RunInfinity()
     {
         c = Object.FindFirstObjectByType<SlideController>();
+        var world = Object.FindFirstObjectByType<InfinityWorld>();
         c.Setup();
         var mode = Physics.simulationMode;
         Physics.simulationMode = SimulationMode.Script;
-        Physics.SyncTransforms();
         failures = 0;
         try
         {
             c.alwaysBoard = true;
-            // down the first bridge
-            var (a, b) = SkateWorldBuilder.infBridges[0];
-            Vector3 dir = new Vector3(b.x - a.x, 0f, b.z - a.z).normalized;
-            Place(a - dir * 8f + Vector3.up * 0.6f, Vector3.zero);
-            c.yaw = Mathf.Atan2(dir.x, dir.z) * Mathf.Rad2Deg;
-            bool down = false;
-            for (int i = 0; i < 300 && !down; i++)
+            world.GenerateAround(Vector3.zero, true);
+            Physics.SyncTransforms();
+            c.Setup();
+            // down a bridge from a tower to the one diagonally below it
+            System.Func<Vector3Int, bool> downBridge = t =>
             {
-                Step(new SlideInput { forward = 1f, sprint = true });
-                Vector3 p = c.transform.position;
-                down = c.Grounded && Vector3.Dot(new Vector3(p.x - b.x, 0f, p.z - b.z), dir) > 0f && Mathf.Abs(p.y - 0.35f - b.y) < 0.8f;
-            }
-            // up the bank at the end of the +x arm, and back
-            Place(new Vector3(8f, 0.6f, 0f), Vector3.zero);
+                Vector3 top = world.Centre(t.x, t.y, t.z);
+                float h = world.Width(t.x, t.y, t.z) * 0.5f;
+                Vector3 dd = new Vector3(1f, 0f, 1f), right = Vector3.Cross(Vector3.up, dd.normalized) * 1.9f;
+                Vector3 a = top + dd * (h - 2.4f) + right;
+                Place(a - dd.normalized * 7f + Vector3.up * 0.6f, Vector3.zero);
+                c.yaw = 45f;
+                Vector3Int below = world.Nearest(top + new Vector3(world.cell * 0.5f, -world.drop, world.cell * 0.5f));
+                Vector3 bc = world.Centre(below.x, below.y, below.z);
+                for (int i = 0; i < 300; i++)
+                {
+                    Step(new SlideInput { forward = 1f, sprint = true });
+                    Vector3 p = c.transform.position;
+                    if (c.Grounded && Mathf.Abs(p.y - 0.35f - bc.y) < 0.8f && new Vector2(p.x - bc.x, p.z - bc.z).magnitude < world.Width(below.x, below.y, below.z) * 0.7f) return true;
+                }
+                return false;
+            };
+            bool first = downBridge(new Vector3Int(0, 0, 0));
+            // sixty layers down, somewhere else entirely
+            Vector3Int deepT = new Vector3Int(4, -3, 60);
+            Vector3 deep = world.Centre(deepT.x, deepT.y, deepT.z);
+            world.GenerateAround(deep, true);
+            Physics.SyncTransforms();
+            c.Setup();
+            bool deepOk = downBridge(deepT);
+            int count = world.TowerCount;
+            int most = (2 * world.radius + 1) * (2 * world.radius + 1) * (world.above + world.below + 1);
+            // a bank at the end of the deep tower's +x arm
+            Place(deep + new Vector3(2f, 0.6f, 0f), Vector3.zero);
             c.yaw = 90f;
-            float peak = 0f, minX = 99f; bool turned = false;
+            float peak = -1e9f; bool turned = false;
             for (int i = 0; i < 300; i++)
             {
                 Step(new SlideInput { forward = turned ? 0f : 1f, sprint = true });
-                peak = Mathf.Max(peak, c.transform.position.y);
+                peak = Mathf.Max(peak, c.transform.position.y - deep.y);
                 if (c.Velocity.x < -1f) turned = true;
-                if (turned) minX = Mathf.Min(minX, c.transform.position.x);
             }
-            bool bank = peak > 3f && turned && minX < 30f;
-            // home from a tip
-            var (pad, land) = SkateWorldBuilder.infPads[0];
-            Vector3 home = new Vector3(land.x - pad.x, 0f, land.z - pad.z).normalized;
-            Place(pad - home * 1.9f + Vector3.up * 0.6f, Vector3.zero);
-            c.yaw = Mathf.Atan2(home.x, home.z) * Mathf.Rad2Deg;
-            bool launched = false, homeOk = false;
-            for (int i = 0; i < 400 && !homeOk; i++)
-            {
-                Step(new SlideInput { forward = launched ? 0f : 1f });
-                launched |= c.Launched;
-                Vector3 p = c.transform.position;
-                homeOk = launched && c.Grounded && Mathf.Abs(p.y - 0.35f) < 0.8f && new Vector2(p.x, p.z).magnitude < 20f;
-            }
-            // grind a bridge edge: jump onto it from beside it
+            bool bank = peak > 2.5f && turned;
+            // grind a bridge edge
             SkateRail rail = null;
-            foreach (var r in Object.FindObjectsByType<SkateRail>(FindObjectsSortMode.None)) if (r.name.StartsWith("Bridge rail")) { rail = r; break; }
-            Vector3 r0 = rail.points[0], r1 = rail.points[1], rd = (r1 - r0).normalized;
-            Place(r0 + rd * 1f + Vector3.up * 1.2f, rd * 8f);
+            foreach (var r in Object.FindObjectsByType<SkateRail>(FindObjectsSortMode.None))
+                if (r.points.Length == 2 && r.points[0].y - r.points[1].y > 3f && Vector3.Distance(r.points[0], deep) < 25f) { rail = r; break; }
             bool grind = false;
-            for (int i = 0; i < 40 && !grind; i++) { Step(new SlideInput { forward = 1f }); grind = c.Grinding; }
-            Report("infinity: down a bridge, up a bank, home from a tip, grind a bridge", down && bank && homeOk && grind,
-                   (down ? "rode down to the next tower" : "DIDN'T GET DOWN TO THE NEXT TOWER") + "; bank: up to " + peak.ToString("F1") + "m" + (turned ? ", came back" : ", NEVER CAME BACK")
-                   + "; " + (homeOk ? "the pad threw me home" : launched ? "LAUNCHED BUT DIDN'T LAND HOME (ended " + c.transform.position.ToString("F1") + ")" : "NEVER LAUNCHED")
-                   + "; " + (grind ? "ground the bridge rail" : "COULDN'T GRIND THE BRIDGE"));
+            if (rail != null)
+            {
+                Vector3 r0 = rail.points[0], rd = (rail.points[1] - r0).normalized;
+                Place(r0 + rd * 1f + Vector3.up * 1.2f, rd * 8f);
+                for (int i = 0; i < 40 && !grind; i++) { Step(new SlideInput { forward = 1f }); grind = c.Grinding; }
+            }
+            Report("infinity: goes on for ever (bridges down at the top and 60 layers down), a bank, a grind", first && deepOk && count <= most && bank && grind,
+                   (first ? "rode down from the first tower" : "COULDN'T RIDE DOWN FROM THE FIRST TOWER") + "; " + (deepOk ? "and 60 layers down" : "NOT 60 LAYERS DOWN")
+                   + "; " + count + " towers built (at most " + most + ")" + "; bank: up " + peak.ToString("F1") + "m" + (turned ? ", came back" : ", NEVER CAME BACK")
+                   + "; " + (grind ? "ground a bridge" : rail == null ? "NO BRIDGE RAIL FOUND" : "COULDN'T GRIND THE BRIDGE"));
         }
         finally
         {
@@ -785,6 +795,30 @@ public static class SlideTests
             c.yaw = 0f;
             float domeTop = 0f;
             for (int i = 0; i < 300; i++) { Step(new SlideInput { forward = 1f, sprint = true }); domeTop = Mathf.Max(domeTop, c.transform.position.y); }
+            // the fast board, on the flat of the lake: flat out in half a second; and a high jump
+            Place(new Vector3(-75f, lakeY + 0.6f, 50f), Vector3.zero);
+            c.yaw = 0f;
+            for (int i = 0; i < 30; i++) Step(new SlideInput { forward = 1f, sprint = true });
+            float push = c.Speed;
+            Place(new Vector3(-75f, lakeY + 0.6f, 60f), Vector3.zero);
+            float jy = c.transform.position.y, jump = 0f;
+            Step(new SlideInput { jump = true, jumpHeld = true });
+            for (int i = 0; i < 80; i++) { Step(new SlideInput { jumpHeld = true }); jump = Mathf.Max(jump, c.transform.position.y - jy); }
+            // beam up a swoosh ramp into the sky
+            var sw = SkateWorldBuilder.aeroSwooshes[0];
+            Vector3 swStart = sw.foot - sw.dir * 14f;
+            Place(new Vector3(swStart.x, SkateWorldBuilder.AeroH(swStart.x, swStart.z) + 0.6f, swStart.z), Vector3.zero);
+            c.yaw = Mathf.Atan2(sw.dir.x, sw.dir.z) * Mathf.Rad2Deg;
+            float beam = 0f;
+            for (int i = 0; i < 250; i++) { Step(new SlideInput { forward = 1f, sprint = true }); beam = Mathf.Max(beam, c.transform.position.y - sw.foot.y); }
+            // an orb throws you
+            Vector3 orb = SkateWorldBuilder.aeroBumpers[0];
+            Place(orb + Vector3.up * 6f, Vector3.zero);
+            float thrown = 0f;
+            for (int i = 0; i < 60; i++) { Step(new SlideInput()); thrown = Mathf.Max(thrown, c.Speed); }
+            Report("aero: fast push, high jump, beam up a swoosh, orbs throw you", push > 25f && jump > 3.5f && beam > sw.height + 3f && thrown > 15f,
+                   "flat out to " + (push * 3.6f).ToString("F0") + "km/h in 0.6s; jumped " + jump.ToString("F1") + "m; beamed up the swoosh to " + beam.ToString("F1") + "m (its lip's at " + sw.height.ToString("F1") + "m)"
+                   + "; an orb threw me at " + (thrown * 3.6f).ToString("F0") + "km/h");
             Report("aero: downhill speed, bubble, cloud, fish, lake, ring, dome", fast > 15f && bounce > 4f && onCloud && rodeFish && carried > 8f && onLake && ringSpeed > ring.speed * 0.9f && domeTop > 16.5f,
                    "rolled down the hill to " + (fast * 3.6f).ToString("F0") + "km/h; bubble bounced me " + bounce.ToString("F1") + "m; " + (onCloud ? "stood on a cloud" : "FELL THROUGH THE CLOUD")
                    + "; " + (rodeFish ? "rode a fish " : "FELL OFF THE FISH after ") + carried.ToString("F1") + "m; " + (onLake ? "skated on the lake" : "SANK IN THE LAKE (" + c.transform.position.y.ToString("F1") + ")")

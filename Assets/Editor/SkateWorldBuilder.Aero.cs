@@ -72,10 +72,13 @@ public static partial class SkateWorldBuilder
         Vector4 sun = new Vector4(AeroSunDir.x, AeroSunDir.y, AeroSunDir.z, 0f);
         aeroGlossy = Mat("AeroGlossy", "3daigamesolo/World/Glossy");
         aeroGlossy.SetVector("_SunDir", sun);
+        aeroGlossy.SetColor("_GridColor", new Color(1f, 1f, 1f, 0.12f)); aeroGlossy.SetFloat("_GridCell", 3f);
         var grass = Mat("AeroGrass", "3daigamesolo/World/Glossy");
         grass.SetVector("_SunDir", sun); grass.SetFloat("_Gloss", 0.12f); grass.SetFloat("_Spec", 0.15f); grass.SetFloat("_SpecPower", 12f); grass.SetFloat("_Rim", 0.25f);
+        grass.SetColor("_GridColor", new Color(0.55f, 1f, 1f, 0.35f)); grass.SetFloat("_GridCell", 6f);
         aeroGlass = Mat("AeroGlass", "3daigamesolo/World/Glossy");
         aeroGlass.SetVector("_SunDir", sun); aeroGlass.SetFloat("_Gloss", 0.65f); aeroGlass.SetFloat("_Spec", 1.4f); aeroGlass.SetFloat("_SpecPower", 120f);
+        aeroGlass.SetColor("_GridColor", new Color(0.85f, 1f, 1f, 0.22f)); aeroGlass.SetFloat("_GridCell", 2f);
         aeroBubble = Mat("AeroBubble", "3daigamesolo/World/Bubble");
         aeroBubble.SetVector("_SunDir", sun);
         aeroCloud = Mat("AeroCloud", "3daigamesolo/World/Glossy");
@@ -111,6 +114,9 @@ public static partial class SkateWorldBuilder
         AeroBubbles();
         AeroRings();
         AeroFish();
+        AeroBounceStuff();
+        AeroSwooshes();
+        AeroMaximal();
         AeroSky(sky);
 
         Vector3 startAt = new Vector3(0f, AeroH(0f, -130f) + 0.2f, -130f);
@@ -128,6 +134,8 @@ public static partial class SkateWorldBuilder
         Object.DestroyImmediate(player.rider.gameObject);
         player.rider = JellyRider(player.transform);
         player.thirdPerson = true;
+        AeroMovement(player);
+        AeroSparkles(camGO.transform);
         var hud = camGO.GetComponent<SlideHUD>();
         hud.player = player; hud.levelName = "Aero"; hud.aero = true;
         camGO.transform.SetPositionAndRotation(startAt + new Vector3(0f, 2.5f, -4f), Quaternion.LookRotation(Vector3.forward));
@@ -421,9 +429,9 @@ public static partial class SkateWorldBuilder
         }
         // and a scatter of them over the hills
         var rnd = new System.Random(23);
-        for (int i = 0; i < 26; i++)
+        for (int i = 0; i < 200; i++)
         {
-            float x = (float)rnd.NextDouble() * 160f - 80f, z = -40f + (float)rnd.NextDouble() * 320f;
+            float x = (float)rnd.NextDouble() * 360f - 180f, z = -230f + (float)rnd.NextDouble() * 520f;
             float r = 1.4f + (float)rnd.NextDouble() * 1.6f;
             Vector3 p = AeroAt(x, z) + Vector3.up * (r + 1.5f + (float)rnd.NextDouble() * 10f);
             if (Mathf.Abs(x) < 10f && z > 0f && z < 150f) continue;   // keep the halfpipe clear

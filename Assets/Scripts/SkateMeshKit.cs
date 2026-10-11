@@ -1,13 +1,17 @@
 using System.Collections.Generic;
 using UnityEngine;
 
-// Builds vertex-coloured meshes out of boxes, cylinders, cones and blobs for the toon shader.
+// Builds vertex-coloured meshes out of boxes, cylinders, cones and blobs for the toon shader. (Used by the
+// level builders, and at runtime by the Infinity level, which builds itself as you go.) Each vertex also
+// gets `wobble` in its uv's x: how much the shader may sway it (decoration, never anything you stand on).
 public class SkateMeshKit
 {
     public readonly List<Vector3> v = new List<Vector3>();
     public readonly List<Vector3> n = new List<Vector3>();
     public readonly List<Color32> c = new List<Color32>();
     public readonly List<int> t = new List<int>();
+    public readonly List<Vector2> uv = new List<Vector2>();
+    public float wobble;
 
     public Matrix4x4 frame = Matrix4x4.identity;
 
@@ -16,6 +20,7 @@ public class SkateMeshKit
         v.Add(frame.MultiplyPoint3x4(p));
         n.Add(frame.MultiplyVector(normal).normalized);
         c.Add(col);
+        uv.Add(new Vector2(wobble, 0f));
         return v.Count - 1;
     }
 
@@ -134,7 +139,7 @@ public class SkateMeshKit
     public Mesh Build(string name)
     {
         var mesh = new Mesh { name = name, indexFormat = UnityEngine.Rendering.IndexFormat.UInt32 };
-        mesh.SetVertices(v); mesh.SetNormals(n); mesh.SetColors(c); mesh.SetTriangles(t, 0);
+        mesh.SetVertices(v); mesh.SetNormals(n); mesh.SetColors(c); mesh.SetUVs(0, uv); mesh.SetTriangles(t, 0);
         mesh.RecalculateBounds();
         return mesh;
     }

@@ -115,6 +115,8 @@ public class SlideController : MonoBehaviour
     [Tooltip("C on the board: a powerslide. You turn harder, keep your speed, and come out of it with this much extra.")]
     public float powerslideBoost = 4f;
     public float boardTurnRate = 360f;
+    [Tooltip("Going uphill on the board, this much of gravity's pull back down the slope is taken away (0: none), so you beam up ramps and hills.")]
+    [Range(0f, 1f)] public float uphillAssist = 0f;
     [Tooltip("With nothing pressed the board rolls on, slowing this gently.")]
     public float boardRollDecel = 2f;
     public float boardBrake = 30f;
@@ -196,6 +198,7 @@ public class SlideController : MonoBehaviour
     Updraft[] updrafts;
     BoostRing[] rings;
     float ringBlock;       // just went through a ring: not again straight away
+    float bumperBlock;     // just hit a bumper: not again straight away
     float shake;           // camera shake left, after an explosion
     float bounceBlock;     // just bounced: don't bounce again off the same thing straight away
     SkateRail grindRail;   // the rail you're grinding, if any
@@ -473,7 +476,16 @@ public class SlideController : MonoBehaviour
                     vT = Vector3.RotateTowards(vT, wish.normalized * vT.magnitude, slideTurnRate * Mathf.Deg2Rad * dt, 0f);
                 vT = Vector3.MoveTowards(vT, Vector3.zero, slideDecel * dt);
             }
-            else if (OnBoard) vT = BoardGround(vT, wish, top, inp, dt);
+            else if (OnBoard)
+            {
+                vT = BoardGround(vT, wish, top, inp, dt);
+                // going uphill: some of gravity's pull back down the slope taken away
+                if (uphillAssist > 0f)
+                {
+                    Vector3 gAlong = Vector3.ProjectOnPlane(Physics.gravity * gravityScale, groundNormal);
+                    if (Vector3.Dot(vT, gAlong) < 0f) vT -= gAlong * uphillAssist * dt;
+                }
+            }
             else vT = RunGround(vT, wish, top, dt);
             // on an escalator with nothing pressed you stand still on it (holding the handrail) rather than rolling back down
             if (onEscalator && wish.sqrMagnitude < 0.01f) vT = Vector3.MoveTowards(vT, Vector3.zero, 40f * dt);
@@ -580,6 +592,27 @@ public class SlideController : MonoBehaviour
                 sinceGrounded = 1f;
                 break;
             }
+        // bumpers: touch one and it throws you off it
+        bumperBlock -= dt;
+        if (bumperBlock <= 0f)
+            foreach (var col in Physics.OverlapSphere(rb.position, ball.radius + 0.3f, ~0, QueryTriggerInteraction.Ignore))
+            {
+                var bm = col.GetComponent<Bumper>();
+                if (bm == null) continue;
+                Vector3 n = rb.position - col.ClosestPoint(rb.position);
+                if (n.sqrMagnitude < 1e-6f) n = rb.position - col.bounds.center;
+                n.Normalize();
+                float into = Vector3.Dot(v, n);
+                if (into < 0f) v -= n * into * 2f;   // bounce off it...
+                v += n * bm.strength;                // ...and get thrown
+                v.y = Mathf.Max(v.y, bm.lift);
+                launched = true;
+                bumperBlock = 0.25f;
+                StartJump();
+                holdingJump = false;
+                break;
+            }
+
         // boost rings: through one and you're shot on the way it faces
         ringBlock -= dt;
         if (rings != null && ringBlock <= 0f)
