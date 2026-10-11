@@ -59,7 +59,7 @@ public class SlideHUD : MonoBehaviour
             Outlined(new Rect(W - 330 * k, 20 * k, 300 * k, 50 * k), Mathf.RoundToInt(player.Speed * 3.6f) + " km/h", Style(Mathf.RoundToInt(34 * k), TextAnchor.UpperRight), Cream);
         if (hintTimer > 0f)
         {
-            Outlined(new Rect(0, H - 90 * k, W, 50 * k), "WASD move    SPACE jump (hold: higher)    C slide    V camera    TAB level    R checkpoint",
+            Outlined(new Rect(0, H - 90 * k, W, 50 * k), "WASD move    SHIFT sprint    SPACE jump (hold: higher; on a wall: wall jump)    C slide    run over the board to ride, Q off    V camera    TAB level    R checkpoint",
                      Style(Mathf.RoundToInt(30 * k), TextAnchor.MiddleCenter), Cream);
             if (!string.IsNullOrEmpty(levelName))
                 Outlined(new Rect(0, 60 * k, W, 90 * k), levelName, Style(Mathf.RoundToInt(72 * k), TextAnchor.MiddleCenter), Cream);

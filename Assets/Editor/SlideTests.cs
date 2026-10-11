@@ -73,12 +73,20 @@ public static class SlideTests
         for (int i = 0; i < 1000; i++) Step(new SlideInput());
         float moved = Vector3.Distance(from, c.transform.position);
 
-        Place(PlazaSpot, new Vector3(20f, 0f, 0f));
+        Place(PlazaSpot, new Vector3(c.sprintSpeed, 0f, 0f));
         float t = 0f;
         while (c.Speed > 0.3f && t < 10f) { Step(new SlideInput()); t += Dt; }
 
-        Report("run, stand, stop", run > c.walkSpeed - 0.5f && run < c.walkSpeed + 0.5f && moved < 1f && t < 2.5f,
-               "running after 0.5s: " + (run * 3.6f).ToString("F0") + "km/h; moved " + moved.ToString("F2") + "m in 20s with nothing pressed; from 72km/h stopped in " + t.ToString("F2") + "s");
+        // sprinting, and turning right round at a sprint
+        Place(PlazaSpot, Vector3.zero);
+        for (int i = 0; i < 25; i++) Step(new SlideInput { forward = 1f, sprint = true });
+        float sprint = c.Speed;
+        float back = 0f;
+        while (c.Velocity.x > -c.walkSpeed * 0.9f && back < 3f) { Step(new SlideInput { forward = -1f }); back += Dt; }
+
+        Report("run, sprint, stand, stop, turn", run > c.walkSpeed - 0.5f && run < c.walkSpeed + 0.5f && sprint > c.sprintSpeed - 0.5f && moved < 1f && t < 0.4f && back < 0.35f,
+               "running after 0.5s: " + (run * 3.6f).ToString("F0") + "km/h, sprinting " + (sprint * 3.6f).ToString("F0") + "km/h; moved " + moved.ToString("F2")
+               + "m in 20s with nothing pressed; from a sprint stopped in " + t.ToString("F2") + "s; sprint to running the other way in " + back.ToString("F2") + "s");
     }
 
     // a decent jump, and you can still change direction mid-air
@@ -224,9 +232,12 @@ public static class SlideTests
             Vector3 end = c.transform.position;
             bool downStairs = end.z < 20f && end.y > 0f && end.y < 1f && stairLow > 0f;
 
+            string extra;
+            bool more = BoardAndWalls(out extra);
             Report("palace: stand, run, stairs", idle < 0.5f && low > 0.2f && ran > 20f && downStairs,
                    "idle moved " + idle.ToString("F2") + "m; ran " + ran.ToString("F0") + "m (lowest " + low.ToString("F2") + "); from the terrace down the stairs to z="
                    + end.z.ToString("F0") + " y=" + end.y.ToString("F2"));
+            Report("palace: board, wall jumps, tower", more, extra);
         }
         finally
         {
@@ -234,5 +245,88 @@ public static class SlideTests
             c.Respawn();
         }
         Debug.Log("SLIDE_TESTS_DONE palace failures=" + failures);
+    }
+// the board lying near the start: run over it and you're riding, fast; Q hops off and leaves it.
+    // Kickflips only on really big air. Wall jumping climbs the tower's shaft, but not a single wall.
+    // And you can run up the tower's spiral ramp
+    static bool BoardAndWalls(out string log)
+    {
+        var rb = c.GetComponent<Rigidbody>();
+        Vector3 boardAt = c.board.position;
+        Place(boardAt + new Vector3(-4f, 0.4f, 0f), Vector3.zero);
+        c.yaw = 90f;
+        bool picked = false;
+        for (int i = 0; i < 60 && !picked; i++) { Step(new SlideInput { forward = 1f }); picked = c.OnBoard; }
+        float boardTop = 0f;
+        for (int i = 0; i < 150; i++) { Step(new SlideInput { forward = 1f, sprint = true }); boardTop = Mathf.Max(boardTop, c.Speed); }
+        bool smallFlip = false;
+        Step(new SlideInput { forward = 1f, jump = true });
+        for (int i = 0; i < 40; i++) { Step(new SlideInput { forward = 1f }); smallFlip |= c.Flipping; }
+        Step(new SlideInput { dismount = true });
+        bool off = !c.OnBoard && Vector3.Distance(c.board.position, c.transform.position) < 1.5f;
+        // big air: ride off something high
+        Vector3 bp = c.board.position;
+        c.ResetBoard();   // (just after hopping off you can't pick it straight back up; this clears that)
+        rb.position = bp + Vector3.up * 12f; c.transform.position = rb.position; rb.linearVelocity = Vector3.zero;
+        Physics.SyncTransforms();
+        c.board.position = bp + Vector3.up * 11.65f;
+        bool repicked = false, bigFlip = false;
+        for (int i = 0; i < 5; i++) { Step(new SlideInput()); repicked |= c.OnBoard; }
+        for (int i = 0; i < 60 && !c.Grounded; i++) { Step(new SlideInput()); bigFlip |= c.Flipping; }
+        Step(new SlideInput { dismount = true });
+        c.ResetBoard();
+
+        // the first wall-jump shaft on the tower: bounce between its walls
+        Quaternion face = Quaternion.Euler(0f, 90f - 118f, 0f);
+        Vector3 tower = new Vector3(-140f, 0f, 0f);
+        Place(tower + face * new Vector3(0f, 14.4f, 9.3f), Vector3.zero);
+        c.yaw = -28f;
+        float dir = -1f, top = 0f;
+        int wallJumps = 0;
+        for (int i = 0; i < 600; i++)
+        {
+            bool jump = c.OnWall && !c.Grounded;
+            float before = c.Velocity.y;
+            Step(new SlideInput { strafe = dir, jump = jump || (i % 40 == 0 && c.Grounded), jumpHeld = true });
+            if (jump && c.Velocity.y > before + 3f) { wallJumps++; dir = -dir; }
+            top = Mathf.Max(top, c.transform.position.y - tower.y);
+        }
+
+        // a single wall (the palace front, above the terrace): one wall jump, then no more
+        Place(new Vector3(-4f, 2.8f, 46.3f), Vector3.zero);
+        c.yaw = 90f;
+        float y0 = c.transform.position.y, single = y0;
+        Step(new SlideInput { jump = true });
+        for (int i = 0; i < 200; i++)
+        {
+            Step(new SlideInput { strafe = -1f, jump = c.OnWall && !c.Grounded, jumpHeld = true });
+            single = Mathf.Max(single, c.transform.position.y);
+        }
+        float singleRise = single - y0;
+
+        // up the spiral ramp, steering round it
+        float a0 = -20f * Mathf.Deg2Rad;
+        Place(tower + new Vector3(Mathf.Cos(a0) * 10.5f, 0.4f, Mathf.Sin(a0) * 10.5f), Vector3.zero);
+        float wound = -20f, last = -20f, spiralTop = 0f;
+        for (int i = 0; i < 1500 && wound < 445f; i++)
+        {
+            Vector3 rel = c.transform.position - tower;
+            float ang = Mathf.Atan2(rel.z, rel.x) * Mathf.Rad2Deg;
+            wound += Mathf.DeltaAngle(last, ang); last = ang;
+            float next = (wound + 14f) * Mathf.Deg2Rad;
+            Vector3 aim = tower + new Vector3(Mathf.Cos(next) * 10.5f, 0f, Mathf.Sin(next) * 10.5f) - c.transform.position;
+            c.yaw = Mathf.Atan2(aim.x, aim.z) * Mathf.Rad2Deg;
+            Step(new SlideInput { forward = 1f, sprint = true });
+            spiralTop = Mathf.Max(spiralTop, c.transform.position.y);
+        }
+
+        bool ok = picked && boardTop > 18f && !smallFlip && off && bigFlip && wallJumps >= 6 && top > 28f && singleRise < 4f && spiralTop > 13.5f;
+        log = (picked ? "ran onto the board and rode it to " + (boardTop * 3.6f).ToString("F0") + "km/h" : "NEVER GOT ON THE BOARD")
+              + "; ordinary jump " + (smallFlip ? "KICKFLIPPED" : "no flip") + "; Q " + (off ? "hops off, board left there" : "DIDN'T HOP OFF")
+              + "; 12m drop on the board " + (bigFlip ? "kickflips" : "NO FLIP") + (repicked ? "" : " (didn't land on it)")
+              + "; shaft: " + wallJumps + " wall jumps, up to " + top.ToString("F1") + "m (the shaft is 14-30m)"
+              + "; single wall: rose only " + singleRise.ToString("F2") + "m"
+              + "; spiral ramp: ran up to " + spiralTop.ToString("F1") + "m (top 14m)";
+        return ok;
     }
 }

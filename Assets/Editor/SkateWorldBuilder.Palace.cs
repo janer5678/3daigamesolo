@@ -89,6 +89,7 @@ public static partial class SkateWorldBuilder
         FloatingThings(deco, shinyMat);
         Planet(deco);
         SpaceCourse(deco, shinyMat);
+        Tower(deco, shinyMat);
         Sparkles(deco);
 
         // sky
@@ -112,6 +113,7 @@ public static partial class SkateWorldBuilder
         player.fallLimit = -40f;
         camGO.GetComponent<SlideHUD>().player = player;
         camGO.GetComponent<SlideHUD>().levelName = "Pink Palace";
+        player.board = BuildBoard(new Vector3(3f, 0f, -55f), Quaternion.LookRotation(Vector3.right));   // lying near the start: run over it to ride
         camGO.transform.SetPositionAndRotation(new Vector3(0f, 2.5f, -67f), Quaternion.LookRotation(Vector3.forward));
 
         EditorSceneManager.SaveScene(scene, PalacePath);
@@ -693,6 +695,147 @@ public static partial class SkateWorldBuilder
         spin.degreesPerSecond = 40f;
         spin.bob = 0.8f;
     }
+    // ---- the tower: off the west side of the island, up a spiral ramp (skate it), two wall-jump
+    // shafts and a spiral of stepping stones to a crown at the top --------------------------------
+
+    static readonly Vector3 TowerAt = new Vector3(-140f, 0f, 0f);
+    const float CoreR = 8f, CoreTop = 56f;
+
+    // a ring (or part of one) round the tower, from angle a0 to a1 (degrees, 0 = east, 90 = north),
+    // rising from y0 to y1 along the way (a spiral ramp when they differ), with a low lip on the outside
+    static void RingPiece(SkateMeshKit k, float rIn, float rOut, float a0, float a1, float y0, float y1, Color32 top, Color32 side, bool lip)
+    {
+        int n = Mathf.Max(2, Mathf.CeilToInt(Mathf.Abs(a1 - a0) / 3f));
+        for (int i = 0; i < n; i++)
+        {
+            float t0 = i / (float)n, t1 = (i + 1) / (float)n;
+            float b0 = Mathf.Lerp(a0, a1, t0) * Mathf.Deg2Rad, b1 = Mathf.Lerp(a0, a1, t1) * Mathf.Deg2Rad;
+            float h0 = Mathf.Lerp(y0, y1, t0), h1 = Mathf.Lerp(y0, y1, t1);
+            Vector3 d0 = new Vector3(Mathf.Cos(b0), 0f, Mathf.Sin(b0)), d1 = new Vector3(Mathf.Cos(b1), 0f, Mathf.Sin(b1));
+            Vector3 i0 = TowerAt + d0 * rIn + Vector3.up * h0, i1 = TowerAt + d1 * rIn + Vector3.up * h1;
+            Vector3 o0 = TowerAt + d0 * rOut + Vector3.up * h0, o1 = TowerAt + d1 * rOut + Vector3.up * h1;
+            Vector3 up = Vector3.Cross(o0 - i0, i1 - i0).normalized; if (up.y < 0f) up = -up;
+            k.Quad(i0, o0, o1, i1, up, top);
+            Vector3 dn = Vector3.down * 0.6f;
+            k.Quad(i0 + dn, o0 + dn, o1 + dn, i1 + dn, -up, side);
+            k.Quad(o0, o1, o1 + dn, o0 + dn, d0 + d1, side);
+            k.Quad(i0, i1, i1 + dn, i0 + dn, -(d0 + d1), side);
+            if (lip && Mathf.Min(h0, h1) > 1.5f)   // (not at the very bottom of a ramp, so you can get on it from the side)
+            {
+                Vector3 l = Vector3.up * 0.55f, w0 = d0 * 0.3f, w1 = d1 * 0.3f;
+                k.Quad(o0 - w0, o1 - w1, o1 - w1 + l, o0 - w0 + l, -(d0 + d1), PWhite);
+                k.Quad(o0, o1, o1 + l, o0 + l, d0 + d1, PWhite);
+                k.Quad(o0 - w0 + l, o1 - w1 + l, o1 + l, o0 + l, Vector3.up, PPinkDeep);
+            }
+        }
+    }
+
+    // two walls sticking out from the core either side of `angle`, a shaft to wall-jump up between
+    static void Shaft(SkateMeshKit k, Transform parent, float angle, float y0, float y1, float halfGap, float depth)
+    {
+        Quaternion face = Quaternion.Euler(0f, 90f - angle, 0f);   // local z points out from the core at `angle`
+        foreach (float sx in new[] { -1f, 1f })
+        {
+            Vector3 centre = TowerAt + face * new Vector3(sx * (halfGap + 0.3f), (y0 + y1) / 2f, CoreR + depth / 2f - 0.5f);
+            Vector3 size = new Vector3(0.6f, y1 - y0, depth + 1f);
+            k.Box(centre, size, face, PPinkPale);
+            for (float y = y0 + 3f; y < y1; y += 3f)   // white stripes, so you can see how high you've got
+                k.Box(TowerAt + face * new Vector3(sx * (halfGap + 0.3f), y, CoreR + depth / 2f - 0.5f), new Vector3(0.66f, 0.25f, depth + 1.02f), face, PWhite);
+            AddBox(parent, "Shaft wall", centre, size, face);
+        }
+    }
+
+    static void Tower(Transform parent, Material shiny)
+    {
+        var root = new GameObject("Tower").transform;
+        root.SetParent(parent, false);
+        var k = new SkateMeshKit();
+
+        // the floating base and the bridge to it from the island's west gap
+        k.Cylinder(TowerAt + Vector3.down * 1.2f, TowerAt, 24f, 48, PPinkPale);
+        k.Cylinder(TowerAt + Vector3.down * 1.35f, TowerAt + Vector3.down * 1.05f, 24.15f, 48, PPinkDeep);
+        k.Cone(TowerAt + Vector3.down * 1.2f, 24f, 0f, -30f, 12, PLilac, 0.2f);
+        Vector3 bridgeMid = new Vector3((-89f + TowerAt.x + 23f) / 2f, -0.4f, 0f);
+        float bridgeLen = (TowerAt.x + 23f) - (-89f);
+        k.Box(bridgeMid, new Vector3(Mathf.Abs(bridgeLen) + 1f, 0.8f, 8f), Quaternion.identity, PWhite);
+        k.Box(bridgeMid + Vector3.down * 0.5f, new Vector3(Mathf.Abs(bridgeLen) + 1f, 0.3f, 8.2f), Quaternion.identity, PPinkDeep);
+
+        // the core: a round pink tower with white bands and heart windows
+        k.Cylinder(TowerAt, TowerAt + Vector3.up * CoreTop, CoreR, 32, PPink);
+        for (float y = 7f; y < CoreTop; y += 8f)
+            k.Cylinder(TowerAt + Vector3.up * y, TowerAt + Vector3.up * (y + 0.5f), CoreR + 0.15f, 32, PWhite);
+        for (int i = 0; i < 6; i++)
+            for (float y = 10f; y < CoreTop - 4f; y += 16f)
+            {
+                float a = (i * 60f + 30f) * Mathf.Deg2Rad;
+                Vector3 d = new Vector3(Mathf.Cos(a), 0f, Mathf.Sin(a));
+                Heart(k, TowerAt + d * (CoreR + 0.05f) + Vector3.up * (y + i % 2 * 8f), 1.4f, Quaternion.LookRotation(-d), PGlass);
+            }
+
+        // up to 14 m: a spiral ramp, 1 1/4 turns from the east side round to the north, gentle enough to skate
+        RingPiece(k, CoreR, CoreR + 5f, 0f, 450f, 0f, 14f, RampTop, RampSide, true);
+        // the landing at the top of it, and the first wall-jump shaft up the north face to 30 m
+        RingPiece(k, CoreR, CoreR + 5f, 90f, 150f, 14f, 14f, RampTop, RampSide, true);
+        Shaft(k, root, 118f, 14f, 30f, 1.5f, 3.6f);
+        // 30 m: a ring all the way round, open over the shaft; the second shaft up the south face to 46 m
+        RingPiece(k, CoreR, CoreR + 4.5f, 132f, 104f + 360f, 30f, 30f, RampTop, RampSide, true);
+        Shaft(k, root, 270f, 30f, 46f, 1.5f, 3.6f);
+        // 46 m: another ring, open over that shaft
+        RingPiece(k, CoreR, CoreR + 4.5f, 284f, 284f + 332f, 46f, 46f, RampTop, RampSide, true);
+        // stepping stones spiralling up to the top
+        var stones = new List<Vector3>();
+        for (int i = 0; i < 8; i++)
+        {
+            float a = (320f + i * 28f) * Mathf.Deg2Rad;
+            stones.Add(TowerAt + new Vector3(Mathf.Cos(a) * 14.5f, 47.2f + i * 1.1f, Mathf.Sin(a) * 14.5f));
+        }
+        // the crown on top
+        k.Cylinder(TowerAt + Vector3.up * (CoreTop - 0.8f), TowerAt + Vector3.up * CoreTop, 10.5f, 40, PWhite);
+        k.Cylinder(TowerAt + Vector3.up * (CoreTop - 1f), TowerAt + Vector3.up * (CoreTop - 0.75f), 10.65f, 40, PPinkDeep);
+        for (int i = 0; i < 8; i++)
+        {
+            float a = i * 45f * Mathf.Deg2Rad;
+            Vector3 p = TowerAt + new Vector3(Mathf.Cos(a) * 9.6f, CoreTop, Mathf.Sin(a) * 9.6f);
+            k.Cone(p, 0.6f, 0f, 2.4f, 6, PPinkDeep, 0f);
+        }
+        var towerGo = Solid("Tower", root, k, shiny, true);
+
+        foreach (var s in stones) CourseStone(root, s, 2f, stones.IndexOf(s));
+
+        // a giant heart turning over the crown
+        var hk = new SkateMeshKit();
+        Heart(hk, Vector3.zero, 7f, Quaternion.identity, PPinkDeep);
+        var heart = Solid("Tower heart", root, hk, shiny, false);
+        heart.transform.position = TowerAt + Vector3.up * (CoreTop + 9f);
+        heart.AddComponent<Spin>().degreesPerSecond = 30f;
+
+        // checkpoints at each level
+        TowerCheckpoint(root, TowerAt + new Vector3(18f, 0f, 0f), "Tower");
+        TowerCheckpoint(root, TowerAt + Ring(140f, 11.5f, 14f), "14 m");
+        TowerCheckpoint(root, TowerAt + Ring(145f, 11f, 30f), "30 m");
+        TowerCheckpoint(root, TowerAt + Ring(300f, 11f, 46f), "46 m");
+        TowerCheckpoint(root, TowerAt + new Vector3(0f, CoreTop, 0f), "Top of the tower!");
+    }
+
+    static Vector3 Ring(float angle, float r, float y)
+    {
+        float a = angle * Mathf.Deg2Rad;
+        return new Vector3(Mathf.Cos(a) * r, y, Mathf.Sin(a) * r);
+    }
+
+    static void TowerCheckpoint(Transform parent, Vector3 at, string label)
+    {
+        var cp = new GameObject(label);
+        cp.transform.SetParent(parent, false);
+        cp.transform.SetPositionAndRotation(at + Vector3.up * 0.4f, Quaternion.LookRotation(Vector3.forward));
+        var c = cp.AddComponent<Checkpoint>();
+        c.label = label;
+        c.radius = 3f;
+        var k = new SkateMeshKit();
+        k.Cylinder(at, at + Vector3.up * 2.6f, 0.08f, 8, PWhite);
+        Heart(k, at + Vector3.up * 3f, 0.9f, Quaternion.identity, PPinkDeep);
+        Solid("Checkpoint heart", parent, k, toonMat, false);
+    }
     // ---- review shots -------------------------------------------------------------------------
 
     public static void PalaceShots()
@@ -706,5 +849,7 @@ public static partial class SkateWorldBuilder
         Shot(cam, new Vector3(60f, 20f, -120f), new Vector3(0f, -20f, 0f), "p06-underside.png");
         Shot(cam, new Vector3(70f, 9f, -18f), new Vector3(180f, 2f, 2f), "p07-space-course.png");
         Shot(cam, new Vector3(150f, 30f, -70f), new Vector3(200f, 2f, 2f), "p08-space-course-above.png");
+        Shot(cam, new Vector3(-80f, 25f, -60f), new Vector3(-140f, 25f, 0f), "p09-tower.png");
+        Shot(cam, TowerAt + Ring(118f, 22f, 18f), TowerAt + Ring(118f, 8f, 24f), "p10-tower-shaft.png");
     }
 }

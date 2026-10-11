@@ -332,6 +332,7 @@ public static partial class SkateWorldBuilder
         var player = BuildPlayer(start.transform, camGO.transform);
         camGO.GetComponent<SlideHUD>().player = player;
         camGO.GetComponent<SlideHUD>().levelName = "Pururin Valley";
+        player.board = BuildBoard(OnPath(12f, 2.5f), Quaternion.LookRotation(Flat(PathDir(12f))));   // lying on the run: run over it to ride
         camGO.transform.SetPositionAndRotation(startAt + Vector3.up * 2.5f - Flat(PathDir(4f)) * 5f, Quaternion.LookRotation(Flat(PathDir(4f))));
 
         EditorSceneManager.SaveScene(scene, ScenePath);
@@ -775,6 +776,83 @@ public static partial class SkateWorldBuilder
         ctrl.cam = cam;
         ctrl.rider = BuildRider(root.transform);
         return ctrl;
+    }
+
+    // the skateboard lying on the floor: run over it and you ride it (no collider; it's just to look at).
+    // Deliberately plain, like the runner: chunky shapes and flat colours, charcoal grip with a light
+    // wood edge, one accent colour on the bottom, grey trucks and off-white wheels. A bit bigger than a
+    // real board so it reads well. Pivot where the wheels touch the ground.
+    const float DeckHalfLen = 0.56f, DeckHalfWidth = 0.21f, DeckBottom = 0.14f, DeckThick = 0.032f, KickStart = 0.37f;
+
+    static float DeckHalfW(float z)
+    {
+        float e = Mathf.Abs(z) - (DeckHalfLen - DeckHalfWidth);   // rounded ends: a semicircle of the deck's half width
+        return e <= 0f ? DeckHalfWidth : DeckHalfWidth * Mathf.Sqrt(Mathf.Max(0f, 1f - (e / DeckHalfWidth) * (e / DeckHalfWidth)));
+    }
+
+    static float DeckLift(float z)
+    {
+        float k = Mathf.Abs(z) - KickStart;                         // nose and tail kick up about 18 degrees
+        return k <= 0f ? 0f : (k < 0.06f ? k * k / 0.12f * 0.32f : 0.06f * 0.16f + (k - 0.06f) * 0.32f);
+    }
+
+    static Transform BuildBoard(Vector3 at, Quaternion rot)
+    {
+        Color32 grip = new Color32(52, 50, 58, 255), wood = new Color32(232, 208, 168, 255);
+        Color32 metal = new Color32(178, 180, 188, 255), wheel = new Color32(244, 240, 230, 255);
+        var b = new SkateMeshKit();
+
+        // the deck: rows across its length, top (grip), bottom (accent) and edges (wood)
+        int rows = 96;
+        var topL = new Vector3[rows + 1]; var topR = new Vector3[rows + 1];
+        for (int i = 0; i <= rows; i++)
+        {
+            float z = Mathf.Lerp(-DeckHalfLen, DeckHalfLen, i / (float)rows);
+            float w = Mathf.Max(DeckHalfW(z), 0.004f), y = DeckBottom + DeckThick + DeckLift(z);
+            topL[i] = new Vector3(-w, y, z); topR[i] = new Vector3(w, y, z);
+        }
+        Vector3 down = Vector3.down * DeckThick;
+        for (int i = 0; i < rows; i++)
+        {
+            Vector3 along = topL[i + 1] - topL[i];
+            Vector3 up = Vector3.Cross(along, Vector3.right).normalized;
+            if (up.y < 0f) up = -up;
+            b.Quad(topL[i], topR[i], topR[i + 1], topL[i + 1], up, grip);
+            b.Quad(topL[i] + down, topR[i] + down, topR[i + 1] + down, topL[i + 1] + down, -up, RunnerAccent);
+            b.Quad(topL[i], topL[i + 1], topL[i + 1] + down, topL[i] + down, Vector3.left + 0.2f * Vector3.forward * Mathf.Sign(topL[i].z), wood);
+            b.Quad(topR[i], topR[i + 1], topR[i + 1] + down, topR[i] + down, Vector3.right + 0.2f * Vector3.forward * Mathf.Sign(topR[i].z), wood);
+        }
+        // a wood line round the edge of the grip, so the shape reads from above
+        for (int i = 0; i < rows; i++)
+        {
+            Vector3 lift = Vector3.up * 0.002f;
+            float inset = 0.014f;
+            Vector3 l0 = topL[i] + lift, l1 = topL[i + 1] + lift, r0 = topR[i] + lift, r1 = topR[i + 1] + lift;
+            Vector3 il0 = l0 + Vector3.right * Mathf.Min(inset, -l0.x), il1 = l1 + Vector3.right * Mathf.Min(inset, -l1.x);
+            Vector3 ir0 = r0 + Vector3.left * Mathf.Min(inset, r0.x), ir1 = r1 + Vector3.left * Mathf.Min(inset, r1.x);
+            b.Quad(l0, il0, il1, l1, Vector3.up, wood);
+            b.Quad(r0, ir0, ir1, r1, Vector3.up, wood);
+        }
+
+        foreach (float s in new[] { -1f, 1f })
+        {
+            float tz = s * 0.3f, axle = 0.058f;
+            // truck: baseplate, kingpin, and a round hanger out to the wheels
+            b.Box(new Vector3(0f, DeckBottom - 0.01f, tz), new Vector3(0.11f, 0.02f, 0.12f), Quaternion.identity, metal);
+            b.Cylinder(new Vector3(0f, DeckBottom - 0.02f, tz), new Vector3(0f, axle + 0.01f, tz), 0.03f, 10, metal);
+            b.Cylinder(new Vector3(-0.17f, axle, tz), new Vector3(0.17f, axle, tz), 0.022f, 10, metal);
+            // chunky wheels
+            foreach (float w in new[] { -1f, 1f })
+                b.Cylinder(new Vector3(w * 0.15f, axle, tz), new Vector3(w * 0.205f, axle, tz), axle, 18, wheel);
+        }
+        var mesh = b.Build("Board");
+        SaveFeatureMesh(mesh);
+        var go = new GameObject("Board", typeof(MeshFilter), typeof(MeshRenderer));
+        go.transform.SetPositionAndRotation(at, rot);
+        go.transform.localScale = Vector3.one * 1.2f;   // about 1.35 m long
+        go.GetComponent<MeshFilter>().sharedMesh = mesh;
+        go.GetComponent<MeshRenderer>().sharedMaterials = new[] { toonMat, outlineMat };
+        return go.transform;
     }
 
     static readonly Color32 RunnerAccent = new Color32(236, 112, 86, 255);

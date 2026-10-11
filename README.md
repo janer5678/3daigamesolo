@@ -4,7 +4,7 @@ A first-person parkour game in Unity 6 (6000.4.0f1), styled after the Pururin wo
 
 **Levels** (Tab switches between them):
 
-- **Pink Palace** (`Assets/Scenes/PinkPalace.unity`, the game opens here): a Y2K pink palace on a floating island in deep space. Glittery halftone tiles, a grand staircase up to a terrace, a fountain, ramps, ledges, giant strawberries, floating hearts and a ringed planet. Run out through a gap in the railing and you fall into space and start again. Out of the gap on the east side runs the **space course**: floating platforms, stepping stones and pillars climbing to a goal under a giant star, with checkpoints (hearts on poles) along the way. Built by `Assets/Editor/SkateWorldBuilder.Palace.cs`.
+- **Pink Palace** (`Assets/Scenes/PinkPalace.unity`, the game opens here): a Y2K pink palace on a floating island in deep space. Glittery halftone tiles, a grand staircase up to a terrace, a fountain, ramps, ledges, giant strawberries, floating hearts and a ringed planet. Run out through a gap in the railing and you fall into space and start again. Off the west side, over a bridge, is **the tower**: a spiral ramp (skate it) round a pink core to 14 m, a wall-jump shaft to 30 m, another to 46 m, then stepping stones spiralling up to a crown at 56 m, with a checkpoint at each level. Out of the gap on the east side runs the **space course**: floating platforms, stepping stones and pillars climbing to a goal under a giant star, with checkpoints (hearts on poles) along the way. Built by `Assets/Editor/SkateWorldBuilder.Palace.cs`.
 - **Pururin Valley** (`Assets/Scenes/SkatePark.unity`): the pastel valley, a long run ending in a plaza with ramps, ledges and a big curved wall. The ground is currently flat (`FlatGround` in `SkateWorldBuilder.cs`; set it to false and rebuild for the downhill valley).
 
 The ramps, rails and ledges in both levels are left over from when this was a skateboarding game; they're scenery and obstacles now. The skateboard version is in git history (the last commit with it is `61314d2`).
@@ -16,15 +16,17 @@ First person (press **V** for third person). Gravity is much heavier than Unity'
 | Key | |
 |---|---|
 | **Mouse** | look |
-| **WASD** | run (about 27 km/h, snappy); steer in the air |
-| **Space** | jump: tap for a short one, **hold for a higher one**. Coyote time (you can still jump just after running off an edge) and jump buffering (press just before landing and you jump on touchdown). Every hop adds a little speed, so hopping again and again builds it up |
+| **WASD** | run (about 23 km/h); you start, stop and turn almost instantly, and have nearly full control in the air |
+| **Shift** | sprint (about 40 km/h) |
+| **Space** | jump: tap for a short one, **hold for a higher one**. Coyote time (you can still jump just after running off an edge) and jump buffering (press just before landing and you jump on touchdown). Hopping again and again the same way slowly builds speed. **In the air against a wall, Space wall jumps** off it: bounce between two walls to climb a shaft (you can't climb one wall on its own). Pressing into a wall while falling slides you down it slowly |
 | **C** | slide: a burst of speed, keeps your momentum; jump out of it to go higher |
+| **Skateboard** | one lies on the floor near the start of each level: run over it and you're riding it, fast (about 58 km/h, 79 with Shift). **Q** hops off and leaves it there. Only really big air kickflips it |
 | **V** | switch between first and third person |
 | **Tab** | next level |
 | **R** | back to the last checkpoint (or the start) |
 | **Esc / click** | free / recapture the mouse |
 
-Tuning lives on the Player object's `SlideController`, grouped into Look, Third person, Running, Jumping, Slide and Air.
+Tuning lives on the Player object's `SlideController`, grouped into Look, Third person, Running, Jumping, Wall jump, Slide, Air and Skateboard.
 
 ## Rebuilding the world
 
