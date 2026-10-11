@@ -59,15 +59,21 @@ public static class SlideTests
 
     static Vector3 PlazaSpot { get { return new Vector3(660f, SkateWorldBuilder.Base(700f) + 0.4f, 32f); } }
 
-    // quick to get going: W for a second, Shift for two
+    // walking is quick to get going, the board takes a moment longer and goes faster,
+    // and stepping off drops you back to walking pace
     static void Coast()
     {
         Place(PlazaSpot, Vector3.zero);
-        for (int i = 0; i < 50; i++) Step(new SlideInput { forward = 1f });
-        float run = c.Speed;
-        for (int i = 0; i < 100; i++) Step(new SlideInput { push = true });
-        float push = c.Speed;
-        Report("gets up to speed fast", run > 9f && push > 19f, "W for 1s: " + (run * 3.6f).ToString("F0") + "km/h, then Shift for 2s: " + (push * 3.6f).ToString("F0") + "km/h");
+        for (int i = 0; i < 25; i++) Step(new SlideInput { forward = 1f });
+        float walk = c.Speed;
+        float t = 0f;
+        while (c.Speed < 14f && t < 5f) { Step(new SlideInput { push = true }); t += Dt; }
+        float board = c.Speed;
+        for (int i = 0; i < 75; i++) Step(new SlideInput { forward = 1f });
+        float off = c.Speed;
+        Report("walk, board, step off", walk > 5f && walk < 6f && board >= 14f && t < 1.5f && off < 6f,
+               "walk after 0.5s: " + (walk * 3.6f).ToString("F0") + "km/h; board to " + (board * 3.6f).ToString("F0") + "km/h in " + t.ToString("F2")
+               + "s; 1.5s after letting go of Shift: " + (off * 3.6f).ToString("F0") + "km/h");
 
         // and standing still on the run's slope you stay put
         c.Respawn();

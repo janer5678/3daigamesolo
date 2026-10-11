@@ -5,14 +5,14 @@ public struct SlideInput
 {
     public float forward;   // W/S
     public float strafe;    // A/D
-    public bool push;       // Shift, held
+    public bool push;       // Shift, held: on the board
     public bool jump;       // Space, pressed
 }
 
-// First person, standing on a board. Grippy and fast: WASD takes you where you want to go
-// almost straight away, Shift pushes you up to a much higher speed, and letting go brings you
-// to a stop quickly. Speed you pick up going downhill is kept, and steering turns it rather
-// than braking it.
+// First person. On foot by default: slow, snappy walking. Hold Shift and you're on the board
+// (it appears under you): faster, it builds speed more gradually, and downhill speed is kept
+// and steered rather than braked. Let go of Shift and you step off and slow to walking pace.
+// Gravity is heavier than Unity's default so jumps and drops don't feel floaty.
 [RequireComponent(typeof(Rigidbody), typeof(SphereCollider))]
 public class SlideController : MonoBehaviour
 {
@@ -27,26 +27,36 @@ public class SlideController : MonoBehaviour
     public float fov = 70f;
     public float fovAtSpeed = 85f;
 
-    [Header("Moving")]
-    [Tooltip("Top speed with WASD alone.")]
-    public float runSpeed = 11f;
-    [Tooltip("Top speed while holding Shift.")]
-    public float pushSpeed = 22f;
-    [Tooltip("How quickly you get up to speed. High = snappy.")]
-    public float groundAccel = 40f;
-    [Tooltip("How quickly you stop with nothing pressed. High = not slidy.")]
+    [Header("On foot")]
+    public float walkSpeed = 5.5f;
+    [Tooltip("How quickly you get up to walking speed. High = snappy.")]
+    public float walkAccel = 40f;
+    [Tooltip("How quickly you stop, or drop back to walking pace after stepping off the board.")]
     public float stopDecel = 14f;
-    [Tooltip("Degrees per second your speed turns when you're going faster than you could push.")]
-    public float fastTurnRate = 240f;
+
+    [Header("On the board (hold Shift)")]
+    public float boardSpeed = 15f;
+    [Tooltip("How quickly pushing gets you up to board speed.")]
+    public float boardAccel = 12f;
+    [Tooltip("With nothing else pressed, how quickly the board slows you.")]
+    public float boardRollDecel = 3f;
+    [Tooltip("Degrees per second downhill speed turns when you're going faster than you can push.")]
+    public float fastTurnRate = 200f;
+    [Tooltip("Overall speed cap, mostly reached going downhill on the board.")]
+    public float maxSpeed = 22f;
+
+    [Header("Air")]
+    [Tooltip("Gravity multiplier. 1 is Unity's default; higher is less floaty.")]
+    public float gravityScale = 2.2f;
+    public float jumpSpeed = 5.5f;
     [Tooltip("How quickly you can change direction in the air. Nothing pressed keeps your momentum.")]
     public float airAccel = 24f;
     [Tooltip("Degrees per second you can turn fast momentum in the air.")]
     public float airTurnRate = 160f;
-    public float jumpSpeed = 4f;
-    public float maxSpeed = 30f;
 
     public float yaw, pitch;
     public bool Grounded { get; private set; }
+    public bool OnBoard { get; private set; }
     public Vector3 Velocity { get { return rb.linearVelocity; } }
     public float Speed { get { return rb.linearVelocity.magnitude; } }
 
@@ -126,26 +136,36 @@ public class SlideController : MonoBehaviour
             right = Vector3.ProjectOnPlane(right, groundNormal).normalized;
         }
 
-        // Shift on its own pushes you forward
+        OnBoard = inp.push;
+
+        // on the board, Shift on its own pushes you forward
         float f = inp.forward;
-        if (inp.push && f == 0f && inp.strafe == 0f) f = 1f;
+        if (OnBoard && f == 0f && inp.strafe == 0f) f = 1f;
         Vector3 wish = fwd * f + right * inp.strafe;
         if (wish.sqrMagnitude > 1f) wish.Normalize();
         float dt = Time.fixedDeltaTime;
+        float top = OnBoard ? boardSpeed : walkSpeed;
 
         Vector3 v = rb.linearVelocity;
+        v += Physics.gravity * (gravityScale - 1f) * dt;
         if (Grounded)
         {
             // work in the plane of the ground; the part into/out of it is left to physics
             Vector3 vN = Vector3.Project(v, groundNormal);
             Vector3 vT = v - vN;
-            float top = inp.push ? pushSpeed : runSpeed;
-            if (wish.sqrMagnitude < 0.01f)
-                vT = Vector3.MoveTowards(vT, Vector3.zero, stopDecel * dt);
+            if (!OnBoard)
+            {
+                // on foot: straight to walking pace, and any extra speed bleeds off quickly
+                if (wish.sqrMagnitude < 0.01f) vT = Vector3.MoveTowards(vT, Vector3.zero, stopDecel * dt);
+                else if (vT.magnitude > top) vT = Vector3.MoveTowards(vT, wish * top, stopDecel * dt);
+                else vT = Vector3.MoveTowards(vT, wish * top, walkAccel * dt);
+            }
+            else if (wish.sqrMagnitude < 0.01f)
+                vT = Vector3.MoveTowards(vT, Vector3.zero, boardRollDecel * dt);
             else if (vT.magnitude > top && Vector3.Dot(vT, wish) > 0f)
                 vT = Vector3.RotateTowards(vT, wish * vT.magnitude, fastTurnRate * Mathf.Deg2Rad * dt, 0f);   // keep downhill speed, just steer it
             else
-                vT = Vector3.MoveTowards(vT, wish * top, groundAccel * dt);
+                vT = Vector3.MoveTowards(vT, wish * top, boardAccel * dt);
             v = vT + vN;
         }
         else if (wish.sqrMagnitude > 0.01f)
@@ -153,7 +173,6 @@ public class SlideController : MonoBehaviour
             // in the air: steer almost like on the ground, but let go and you keep your momentum
             Vector3 vH = new Vector3(v.x, 0f, v.z);
             Vector3 wishH = new Vector3(wish.x, 0f, wish.z).normalized * wish.magnitude;
-            float top = inp.push ? pushSpeed : runSpeed;
             if (vH.magnitude > top && Vector3.Dot(vH, wishH) > 0f)
                 vH = Vector3.RotateTowards(vH, wishH * vH.magnitude, airTurnRate * Mathf.Deg2Rad * dt, 0f);
             else
@@ -170,9 +189,10 @@ public class SlideController : MonoBehaviour
     {
         if (cam == null) return;
         cam.SetPositionAndRotation(transform.position + Vector3.up * (eyeHeight - ball.radius), Quaternion.Euler(pitch, yaw, 0f));
-        if (camera3d != null) camera3d.fieldOfView = Mathf.Lerp(fov, fovAtSpeed, Mathf.Clamp01(Speed / 25f));
+        if (camera3d != null) camera3d.fieldOfView = Mathf.Lerp(fov, fovAtSpeed, Mathf.Clamp01(Speed / 20f));
 
-        if (board != null)
+        if (board != null) board.gameObject.SetActive(OnBoard);
+        if (board != null && OnBoard)
         {
             Vector3 h = rb.linearVelocity; h.y = 0f;
             Vector3 heading = h.magnitude > 1f ? h : Quaternion.Euler(0f, yaw, 0f) * Vector3.forward;
