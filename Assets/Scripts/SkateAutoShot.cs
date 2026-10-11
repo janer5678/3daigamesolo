@@ -12,6 +12,7 @@ public class SkateAutoShot : MonoBehaviour
         int i = System.Array.IndexOf(args, "-autoshot");
         if (i < 0 || i + 1 >= args.Length) yield break;
         string folder = args[i + 1];
+        Application.runInBackground = true;
         System.IO.Directory.CreateDirectory(folder);
         float[] at = { 2f, 6f, 11f, 16f };
         float t0 = Time.time;

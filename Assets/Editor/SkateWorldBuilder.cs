@@ -11,7 +11,7 @@ using UnityEngine;
 // with kickers, rails and ledges along it, ending in a flat skate plaza with a halfpipe, a
 // funbox, rails, a manual pad and a big quarterpipe wall to turn round on.
 //
-// Run from the command line it also test-rides the level (SkateTests) and writes review
+// Run from the command line it also test-rides the level (SlideTests) and writes review
 // screenshots to Review/.
 public static class SkateWorldBuilder
 {
@@ -213,7 +213,7 @@ public static class SkateWorldBuilder
         try
         {
             Build();
-            SkateTests.RunAll();
+            SlideTests.RunAll();
             Shots();
         }
         catch (System.Exception e)
@@ -301,18 +301,16 @@ public static class SkateWorldBuilder
         Vector3 startAt = OnPath(4f, 0f);
         var start = new GameObject("Start");
         start.transform.SetPositionAndRotation(startAt + Vector3.up * 0.2f, Quaternion.LookRotation(Flat(PathDir(4f))));
-        var skater = BuildSkater(start.transform);
-
-        // ---- camera and HUD
-        var camGO = new GameObject("Main Camera", typeof(Camera), typeof(AudioListener), typeof(SkateCamera), typeof(SkateHUD), typeof(SkateAutoShot));
+        // ---- camera, HUD and you
+        var camGO = new GameObject("Main Camera", typeof(Camera), typeof(AudioListener), typeof(SlideHUD), typeof(SkateAutoShot));
         camGO.tag = "MainCamera";
         var cam = camGO.GetComponent<Camera>();
         cam.nearClipPlane = 0.1f;
         cam.farClipPlane = 9000f;
         cam.clearFlags = CameraClearFlags.SolidColor;
         cam.backgroundColor = new Color(0.98f, 0.88f, 0.94f);
-        camGO.GetComponent<SkateCamera>().target = skater;
-        camGO.GetComponent<SkateHUD>().skater = skater;
+        var player = BuildPlayer(start.transform, camGO.transform);
+        camGO.GetComponent<SlideHUD>().player = player;
         camGO.transform.SetPositionAndRotation(startAt + Vector3.up * 2.5f - Flat(PathDir(4f)) * 5f, Quaternion.LookRotation(Flat(PathDir(4f))));
 
         EditorSceneManager.SaveScene(scene, ScenePath);
@@ -321,7 +319,6 @@ public static class SkateWorldBuilder
         Physics.SyncTransforms();
         Debug.Log("SKATE_WORLD_BUILT nearVerts=" + nearMesh.vertexCount + " farVerts=" + farMesh.vertexCount
                   + " trees=" + nearTrees.vertexCount + "/" + farTrees.vertexCount + " features=" + featureCount
-                  + " rails=" + Object.FindObjectsByType<SkateRail>(FindObjectsSortMode.None).Length
                   + " base(0)=" + Base(0f) + " base(650)=" + Base(650f));
     }
 
@@ -460,7 +457,6 @@ public static class SkateWorldBuilder
         go.GetComponent<MeshFilter>().sharedMesh = mesh;
         go.GetComponent<MeshRenderer>().sharedMaterials = new[] { toonMat, outlineMat };
         go.GetComponent<MeshCollider>().sharedMesh = mesh;
-        if (ramp) go.AddComponent<SkateRamp>();
     }
 
     static void Kicker(string name, Matrix4x4 frame, float radius, float degrees, float width, Color32 side)
@@ -492,9 +488,7 @@ public static class SkateWorldBuilder
         // the coping: a steel bar along the lip, grindable
         Vector3 a0 = frame.MultiplyPoint3x4(new Vector3(-width * 0.5f + 0.2f, lip + 0.03f, radius + 0.02f));
         Vector3 a1 = frame.MultiplyPoint3x4(new Vector3(width * 0.5f - 0.2f, lip + 0.03f, radius + 0.02f));
-        var rail = Rail(name + " coping", new[] { a0, a1 }, false);
-        rail.coping = true;
-        rail.displayName = "Coping";
+        Rail(name + " coping", new[] { a0, a1 }, false);
     }
 
     static void Funbox(string name, Matrix4x4 frame, float width)
@@ -520,7 +514,7 @@ public static class SkateWorldBuilder
         {
             Vector3 a = frame.MultiplyPoint3x4(new Vector3(sx * (width * 0.5f - 0.15f), rise + 0.05f, ramp - 0.2f));
             Vector3 b = frame.MultiplyPoint3x4(new Vector3(sx * (width * 0.5f - 0.15f), rise + 0.05f, ramp + top + 0.2f));
-            Rail(name + " edge", new[] { a, b }, false).displayName = "Funbox";
+            Rail(name + " edge", new[] { a, b }, false);
         }
     }
 
@@ -533,7 +527,7 @@ public static class SkateWorldBuilder
         Rail(name, pts.ToArray());
     }
 
-    static SkateRail Rail(string name, Vector3[] pts, bool posts = true)
+    static void Rail(string name, Vector3[] pts, bool posts = true)
     {
         Transform root = NewFeature(name, pts[0]);
         var kit = new SkateMeshKit();
@@ -558,11 +552,7 @@ public static class SkateWorldBuilder
         go.transform.position = Vector3.zero;
         go.GetComponent<MeshFilter>().sharedMesh = mesh;
         go.GetComponent<MeshRenderer>().sharedMaterials = new[] { toonMat, outlineMat };
-        var rail = root.gameObject.AddComponent<SkateRail>();
-        rail.points = pts;
-        rail.displayName = name;
         foreach (var p in pts) keepClear.Add(new Vector3(p.x, p.z, 6f));
-        return rail;
     }
 
     static void PathLedge(string name, float x, float length, float d, float height, float width)
@@ -592,14 +582,6 @@ public static class SkateWorldBuilder
         box.center = new Vector3(0f, (height - sink) * 0.5f, 0f);
         box.size = new Vector3(width, height + sink, length);
         keepClear.Add(new Vector3(at.x, at.z, length * 0.5f + 6f));
-        if (height < 0.3f) return;      // a manual pad: nothing to grind
-        foreach (float sx in new[] { -1f, 1f })
-        {
-            var r = root.gameObject.AddComponent<SkateRail>();
-            r.points = new[] { root.TransformPoint(new Vector3(sx * (width * 0.5f - 0.05f), height + 0.02f, -length * 0.5f)),
-                               root.TransformPoint(new Vector3(sx * (width * 0.5f - 0.05f), height + 0.02f, length * 0.5f)) };
-            r.displayName = "Ledge";
-        }
     }
 
     // ---- ground meshes ------------------------------------------------------------------------
@@ -736,75 +718,31 @@ public static class SkateWorldBuilder
         return kit.Build(near ? "Trees near" : "Trees far");
     }
 
-    // ---- the skater ---------------------------------------------------------------------------
+    // ---- the player --------------------------------------------------------------------------
 
-    static SkateController BuildSkater(Transform start)
+    // a frictionless ball with the camera at eye height above it
+    static SlideController BuildPlayer(Transform start, Transform cam)
     {
-        var root = new GameObject("Skater", typeof(SkateController), typeof(SkaterRig));
-        root.transform.SetPositionAndRotation(start.position, start.rotation);
-        var ctrl = root.GetComponent<SkateController>();
+        var root = new GameObject("Player", typeof(Rigidbody), typeof(SphereCollider), typeof(SlideController));
+        root.transform.position = start.position + Vector3.up * 0.35f;
+        var ball = root.GetComponent<SphereCollider>();
+        ball.radius = 0.35f;
+        var slippy = new PhysicsMaterial("Slippery") { dynamicFriction = 0f, staticFriction = 0f, bounciness = 0f,
+            frictionCombine = PhysicsMaterialCombine.Minimum, bounceCombine = PhysicsMaterialCombine.Minimum };
+        string path = Folder + "/Slippery.asset";
+        if (AssetDatabase.LoadMainAssetAtPath(path) != null) AssetDatabase.DeleteAsset(path);
+        AssetDatabase.CreateAsset(slippy, path);
+        ball.sharedMaterial = slippy;
+        var rb = root.GetComponent<Rigidbody>();
+        rb.mass = 1f;
+        rb.linearDamping = 0.08f;
+        rb.angularDamping = 0f;
+        rb.freezeRotation = true;
+        rb.interpolation = RigidbodyInterpolation.Interpolate;
+        rb.collisionDetectionMode = CollisionDetectionMode.ContinuousDynamic;
+        var ctrl = root.GetComponent<SlideController>();
         ctrl.startPoint = start;
-
-        Color32 hoodie = new Color32(248, 168, 204, 255), pants = new Color32(150, 140, 220, 255);
-        Color32 skin = new Color32(255, 226, 214, 255), hair = new Color32(76, 200, 212, 255);
-        Color32 shoe = new Color32(250, 246, 250, 255), ink = new Color32(60, 40, 90, 255);
-        Color32 deck = new Color32(112, 220, 228, 255), grip = new Color32(90, 70, 120, 255), wheel = new Color32(252, 236, 200, 255);
-
-        Transform visual = Part("Visual", root.transform, Vector3.zero, null);
-
-        // the board: deck, kicktails, trucks, wheels
-        var b = new SkateMeshKit();
-        b.Box(new Vector3(0f, 0.012f, 0f), new Vector3(0.22f, 0.025f, 0.66f), Quaternion.identity, deck);
-        b.Box(new Vector3(0f, 0.027f, 0f), new Vector3(0.21f, 0.006f, 0.64f), Quaternion.identity, grip);
-        foreach (float s in new[] { -1f, 1f })
-        {
-            Quaternion tilt = Quaternion.Euler(-s * 18f, 0f, 0f);
-            b.Box(new Vector3(0f, 0.04f, s * 0.41f), new Vector3(0.21f, 0.025f, 0.2f), tilt, deck);
-            b.Box(new Vector3(0f, -0.03f, s * 0.25f), new Vector3(0.17f, 0.035f, 0.05f), Quaternion.identity, new Color32(220, 220, 236, 255));
-            foreach (float w in new[] { -1f, 1f })
-                b.Cylinder(new Vector3(w * 0.075f, -0.05f, s * 0.25f), new Vector3(w * 0.115f, -0.05f, s * 0.25f), 0.035f, 8, wheel);
-        }
-        Transform board = Part("Board", visual, new Vector3(0f, 0.09f, 0f), b.Build("Board"));
-
-        // body stands sideways: its +z is the board's right (toes side), feet along the board
-        Transform body = Part("Body", visual, new Vector3(0f, 0.12f, 0f), null);
-        body.localRotation = Quaternion.Euler(0f, 90f, 0f);
-        var l = new SkateMeshKit();
-        foreach (float s in new[] { -1f, 1f })
-        {
-            l.Box(new Vector3(s * 0.21f, 0.39f, 0f), new Vector3(0.16f, 0.7f, 0.17f), Quaternion.identity, pants);
-            l.Box(new Vector3(s * 0.21f, 0.04f, 0.04f), new Vector3(0.16f, 0.08f, 0.28f), Quaternion.identity, shoe);
-        }
-        Transform legs = Part("Legs", body, Vector3.zero, l.Build("Legs"));
-
-        Transform hips = Part("Hips", body, new Vector3(0f, 0.74f, 0f), null);
-        var tk = new SkateMeshKit();
-        tk.Box(new Vector3(0f, 0.27f, 0f), new Vector3(0.5f, 0.56f, 0.3f), Quaternion.identity, hoodie);
-        tk.Box(new Vector3(0f, 0.5f, -0.14f), new Vector3(0.34f, 0.16f, 0.1f), Quaternion.identity, hoodie);     // the hood
-        tk.Box(new Vector3(0f, 0.17f, 0.155f), new Vector3(0.28f, 0.13f, 0.01f), Quaternion.identity, new Color32(232, 140, 186, 255));  // pocket
-        Part("Torso", hips, Vector3.zero, tk.Build("Torso"));
-
-        var hk = new SkateMeshKit();
-        hk.Ellipsoid(new Vector3(0f, 0.2f, 0f), new Vector3(0.2f, 0.21f, 0.2f), Quaternion.identity, 14, 10, skin);
-        hk.Ellipsoid(new Vector3(0f, 0.28f, -0.035f), new Vector3(0.22f, 0.17f, 0.21f), Quaternion.identity, 14, 10, hair);
-        hk.Box(new Vector3(0f, 0.33f, 0.15f), new Vector3(0.32f, 0.09f, 0.07f), Quaternion.Euler(-20f, 0f, 0f), hair);   // bangs
-        foreach (float s in new[] { -1f, 1f })
-            hk.Box(new Vector3(s * 0.075f, 0.19f, 0.19f), new Vector3(0.04f, 0.075f, 0.02f), Quaternion.identity, ink);
-        Transform head = Part("Head", hips, new Vector3(0f, 0.56f, 0f), hk.Build("Head"));
-
-        Transform[] arms = new Transform[2];
-        for (int i = 0; i < 2; i++)
-        {
-            float s = i == 0 ? -1f : 1f;
-            var ak = new SkateMeshKit();
-            ak.Box(new Vector3(0f, -0.21f, 0f), new Vector3(0.13f, 0.44f, 0.13f), Quaternion.identity, hoodie);
-            ak.Box(new Vector3(0f, -0.47f, 0f), new Vector3(0.1f, 0.1f, 0.1f), Quaternion.identity, skin);
-            arms[i] = Part(i == 0 ? "Arm L" : "Arm R", hips, new Vector3(s * 0.32f, 0.49f, 0f), ak.Build(i == 0 ? "Arm L" : "Arm R"));
-        }
-
-        var rig = root.GetComponent<SkaterRig>();
-        rig.skater = ctrl; rig.visual = visual; rig.board = board; rig.body = body; rig.legs = legs;
-        rig.hips = hips; rig.head = head; rig.armLeft = arms[0]; rig.armRight = arms[1];
+        ctrl.cam = cam;
         return ctrl;
     }
 
@@ -876,18 +814,17 @@ public static class SkateWorldBuilder
     public static void Shots()
     {
         var cam = Object.FindFirstObjectByType<Camera>();
-        var skater = Object.FindFirstObjectByType<SkateController>();
-        skater.Respawn(true);
-        Vector3 s = skater.transform.position;
+        var player = Object.FindFirstObjectByType<SlideController>();
+        player.Respawn();
+        Vector3 s = player.transform.position;
         Vector3 f = Flat(PathDir(4f));
-        Shot(cam, s + Vector3.up * 2.2f - f * 4.5f, s + f * 30f, "01-start.png");
+        Shot(cam, s + Vector3.up * 1.15f, s + f * 30f, "01-start-first-person.png");
         Vector3 high = OnPath(40f, 6f) + Vector3.up * 26f;
         Shot(cam, high, OnPath(160f, 0f), "02-down-the-run-from-above.png");
         Shot(cam, OnPath(200f, 2f) + Vector3.up * 3f, OnPath(240f, 0f) + Vector3.up * 1f, "03-big-kicker.png");
         Shot(cam, OnPath(95f, -2f) + Vector3.up * 2f, OnPath(125f, 4.5f), "04-rail.png");
         Shot(cam, new Vector3(630f, Base(630f) + 18f, -10f), new Vector3(760f, Base(700f), 5f), "05-plaza.png");
         Shot(cam, new Vector3(770f, Base(700f) + 2.5f, 27f), new Vector3(800f, Base(700f) + 1f, 27f), "06-halfpipe.png");
-        Shot(cam, s + Vector3.up * 1.0f + skater.transform.right * 2.2f + f * 0.5f, s + Vector3.up * 0.8f, "07-skater.png");
         Shot(cam, OnPath(300f, 20f) + Vector3.up * 40f, OnPath(300f, -60f), "08-river.png");
     }
 
