@@ -869,6 +869,7 @@ public static partial class SkateWorldBuilder
         SaveFeatureMesh(mesh);
         var mf = go.AddComponent<MeshFilter>(); mf.sharedMesh = mesh;
         go.AddComponent<MeshRenderer>().sharedMaterials = new[] { toonMat, outlineMat };
+        go.GetComponent<Rigidbody>().isKinematic = true;
         var m = go.GetComponent<Mover>();
         // the train runs along the x axis; the model is built along z, so the path turns it to face +x
         m.path = new[] { new Vector3(-230f, floor - 0.4f, 2.2f), new Vector3(0f, floor - 0.4f, 2.2f), new Vector3(230f, floor - 0.4f, 2.2f) };

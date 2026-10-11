@@ -233,6 +233,9 @@ public static partial class SkateWorldBuilder
             BuildCity();
             SlideTests.RunCity();
             CityShots();
+            BuildAkiba();
+            SlideTests.RunAkiba();
+            AkibaShots();
         }
         catch (System.Exception e)
         {
@@ -781,6 +784,12 @@ public static partial class SkateWorldBuilder
         ctrl.startPoint = start;
         ctrl.cam = cam;
         ctrl.rider = BuildRider(root.transform);
+        // the body above the ball: you only fit under low things when you slide (it's switched off then)
+        var torso = new GameObject("Torso", typeof(CapsuleCollider));
+        torso.transform.SetParent(root.transform, false);
+        var tc = torso.GetComponent<CapsuleCollider>();
+        tc.center = new Vector3(0f, 0.6f, 0f); tc.height = 1.2f; tc.radius = 0.25f; tc.sharedMaterial = slippy;
+        ctrl.torso = tc;
         return ctrl;
     }
 

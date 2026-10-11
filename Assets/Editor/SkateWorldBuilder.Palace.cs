@@ -34,6 +34,14 @@ public static partial class SkateWorldBuilder
     static readonly Color32 PRed = new Color32(244, 86, 128, 255), PLeaf = new Color32(140, 220, 170, 255), PSeed = new Color32(255, 236, 170, 255);
     static readonly Color32 PTileA = new Color32(255, 204, 224, 255), PTileB = new Color32(250, 186, 212, 255);
 
+    // -executeMethod SkateWorldBuilder.PalaceFromCommandLine: just this level and its test runs
+    public static void PalaceFromCommandLine()
+    {
+        try { BuildPalace(); SlideTests.RunPalace(); }
+        catch (System.Exception e) { Debug.LogException(e); EditorApplication.Exit(1); return; }
+        EditorApplication.Exit(0);
+    }
+
     public static void BuildPalace()
     {
         Directory.CreateDirectory(Folder);
@@ -123,10 +131,11 @@ public static partial class SkateWorldBuilder
         Debug.Log("SKATE_PALACE_BUILT features=" + featureCount);
     }
 
-    // the city opens first; Tab goes on to the pink palace, then the valley
+    // Akiba opens first; Tab goes on to the city, the pink palace, then the valley
     static void SetBuildScenes()
     {
         var list = new List<EditorBuildSettingsScene>();
+        if (File.Exists(AkibaPath)) list.Add(new EditorBuildSettingsScene(AkibaPath, true));
         if (File.Exists(CityPath)) list.Add(new EditorBuildSettingsScene(CityPath, true));
         if (File.Exists(PalacePath)) list.Add(new EditorBuildSettingsScene(PalacePath, true));
         if (File.Exists(ScenePath)) list.Add(new EditorBuildSettingsScene(ScenePath, true));

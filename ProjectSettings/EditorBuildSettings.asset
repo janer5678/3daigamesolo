@@ -6,6 +6,9 @@ EditorBuildSettings:
   serializedVersion: 2
   m_Scenes:
   - enabled: 1
+    path: Assets/Scenes/Akiba.unity
+    guid: 8228bc1e68e920c48badef96939f5196
+  - enabled: 1
     path: Assets/Scenes/SakuraCity.unity
     guid: 3792182363c3be444a0b8231fd1398a7
   - enabled: 1
