@@ -1,46 +1,40 @@
 # 3daigamesolo
 
-A first-person downhill sliding game in Unity 6 (6000.4.0f1), styled after the Pururin world from J's World: flat pastel cel shading, ink outlines, pink haze, teal pines, a pink dirt run and a cyan river, with faint TV scanlines over the top.
+A first-person parkour game in Unity 6 (6000.4.0f1), styled after the Pururin world from J's World: flat pastel cel shading and ink outlines.
 
 **Levels** (Tab switches between them):
 
-- **Pink Palace** (`Assets/Scenes/PinkPalace.unity`, the game opens here): a Y2K pink palace on a floating island in deep space. Glittery halftone tiles, a grand staircase with handrails up to a terrace with banks either side, a fountain with a curved rail round it, a halfpipe, a quarterpipe wall, a funbox, kickers, ledges and rails, giant strawberries, floating hearts and a ringed planet. Ride out through a gap in the railing and you fall into space and start again. Out of the gap on the east side runs the **space course**: floating platforms, stepping stones, rails across the gaps and kickers, climbing to a goal under a giant star, with checkpoints (hearts on poles) along the way. Built by `Assets/Editor/SkateWorldBuilder.Palace.cs`.
-- **Pururin Valley** (below).
+- **Pink Palace** (`Assets/Scenes/PinkPalace.unity`, the game opens here): a Y2K pink palace on a floating island in deep space. Glittery halftone tiles, a grand staircase up to a terrace, a fountain, ramps, ledges, giant strawberries, floating hearts and a ringed planet. Run out through a gap in the railing and you fall into space and start again. Out of the gap on the east side runs the **space course**: floating platforms, stepping stones and pillars climbing to a goal under a giant star, with checkpoints (hearts on poles) along the way. Built by `Assets/Editor/SkateWorldBuilder.Palace.cs`.
+- **Pururin Valley** (`Assets/Scenes/SkatePark.unity`): the pastel valley, a long run ending in a plaza with ramps, ledges and a big curved wall. The ground is currently flat (`FlatGround` in `SkateWorldBuilder.cs`; set it to false and rebuild for the downhill valley).
 
-Open the project and play `Assets/Scenes/SkatePark.unity`. The ground is currently flat for testing movement (`FlatGround` in `SkateWorldBuilder.cs`; set it to false and rebuild for the downhill valley). You start at the top of the run. It winds about 650 m down the valley past kickers, rails and ledges, and ends in a flat plaza with a halfpipe, a funbox, rails, a manual pad and a big quarterpipe wall.
+The ramps, rails and ledges in both levels are left over from when this was a skateboarding game; they're scenery and obstacles now. The skateboard version is in git history (the last commit with it is `61314d2`).
 
 ## Controls
 
-First person (press **V** for third person). You walk by default; **Q gets you on the board** (it appears under your feet) and off again. The board carries momentum, so you glide, carve and drift rather than sprint. Gravity is much heavier than Unity's default, and heavier still on the way down, so jumps are quick and don't hang.
+First person (press **V** for third person). Gravity is much heavier than Unity's default, and heavier still on the way down, so jumps are quick and don't hang.
 
 | Key | |
 |---|---|
 | **Mouse** | look |
-| **WASD** | walk (about 20 km/h, snappy); on the board, steer (carves keep your speed), S brakes |
-| **Q** | get on / off the board |
-| **Shift** (hold, on the board) | push (Shift alone pushes you forward): builds to about 61 km/h; downhill speed is kept |
-| **Mouse buttons** (hold, on the board) | right: manual (nose up); left: nose manual (tail up) |
-| **Space** | jump: tap for a short one, **hold for a higher one**; with coyote time and jump buffering. Big air on the board (going high or falling fast) kickflips the board by itself. Every hop adds a little speed, so hopping again and again builds it up. Jumps you off a rail |
-| **C** | slide: keeps your momentum (a burst of speed on foot); jump out of it to go higher |
+| **WASD** | run (about 27 km/h, snappy); steer in the air |
+| **Space** | jump: tap for a short one, **hold for a higher one**. Coyote time (you can still jump just after running off an edge) and jump buffering (press just before landing and you jump on touchdown). Every hop adds a little speed, so hopping again and again builds it up |
+| **C** | slide: a burst of speed, keeps your momentum; jump out of it to go higher |
 | **V** | switch between first and third person |
 | **Tab** | next level |
 | **R** | back to the last checkpoint (or the start) |
 | **Esc / click** | free / recapture the mouse |
 
-On the board you lock onto ramps where they curve up, so you ride up quarterpipe walls; where they curve away (funbox tops, kicker lips) you fly off, with an extra pop. Lean into a wall in the air (press towards it) to wallride along it; Space jumps you off it. You also lock onto rails: get near one at about its height, from any angle (along it, across it, or dropping onto it), and you slide onto it and grind (come in from the side and it's a boardslide; come in along it and you ride it on your trucks; sparks either way) until you jump off (Space) or step off the board (Q).
-Tuning lives on the Player object's `SlideController`, grouped into Third person, On foot, On the board, Ramp lock, Rail lock, Air and Kickflip. The board and skater are deliberately plain (flat colours, simple shapes, one accent colour, `BoardAccent` in the builder) so they fit whatever place you're skating through.
-
-The skateboard version (tricks, grinds, manuals, combos) is in git history at commit `7130f56`.
+Tuning lives on the Player object's `SlideController`, grouped into Look, Third person, Running, Jumping, Slide and Air.
 
 ## Rebuilding the world
 
-The scene is generated by `Assets/Editor/SkateWorldBuilder.cs` (menu **Skate > Build world**). Change the layout there and rebuild rather than editing the scene by hand. **Skate > Run test rides** steps the real controller and physics through a few scripted runs (walk/board/step-off speeds, stays put when idle, ride all the way down the run, stops when you let go, jump height and air control) and logs PASS/FAIL to the console.
+The scenes are generated by `Assets/Editor/SkateWorldBuilder.cs` and `SkateWorldBuilder.Palace.cs` (menu **Skate > Build world**). Change the layout there and rebuild rather than editing the scenes by hand. **Skate > Run test runs** steps the real controller and physics through scripted runs (running and stopping, jump height and air control, held jumps, coyote time, jump buffering, hop speed, sliding, solid ground everywhere, the palace stairs) and logs PASS/FAIL to the console.
 
 Command line:
 
 ```
-Unity -batchmode -projectPath . -executeMethod SkateWorldBuilder.BuildFromCommandLine   # build + tests + screenshots in Review/
-Unity -batchmode -projectPath . -executeMethod SkateWorldBuilder.BuildPlayer            # Windows build in Builds/Windows
+Unity -batchmode -projectPath . -executeMethod SkateWorldBuilder.BuildFromCommandLine   # build both levels + tests + screenshots in Review/
+Unity -batchmode -projectPath . -executeMethod SkateWorldBuilder.BuildPlayer            # Windows build in Builds/Staging
 ```
 
 The shaders in `Assets/Shaders` are adapted from J's World's Pururin world shaders. The HUD font is Bangers (SIL Open Font License, see `Assets/Resources/Bangers - OFL.txt`).

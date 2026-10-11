@@ -406,7 +406,7 @@ public static partial class SkateWorldBuilder
             k.Box(new Vector3(sx * (StairsHX + 0.3f), TerraceH * 0.5f - 0.2f, TerraceZ0 - StairsRun / 2f), new Vector3(0.6f, 0.4f, StairsRun), Quaternion.identity, PPinkDeep);
         Solid("Terrace", parent, k, toonMat, false);
 
-        // colliders: the deck, and a smooth slope over the stairs so the board rolls down (or up) them
+        // colliders: the deck, and a smooth slope over the stairs so you run down (or up) them without catching on the steps
         AddBox(parent, "Terrace collider", new Vector3(0f, TerraceH / 2f - 0.2f, cz), new Vector3(TerraceHX * 2f, TerraceH + 0.4f, dz));
         float slope = Mathf.Atan2(TerraceH, StairsRun) * Mathf.Rad2Deg, len = Mathf.Sqrt(TerraceH * TerraceH + StairsRun * StairsRun);
         AddBox(parent, "Stairs slope", new Vector3(0f, TerraceH / 2f - 0.15f, TerraceZ0 - StairsRun / 2f), new Vector3(StairsHX * 2f, 0.3f, len),

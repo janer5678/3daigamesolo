@@ -297,7 +297,7 @@ public static partial class SkateWorldBuilder
 
         Mesh riverMesh = SaveMesh(River(), "River");
         var river = MeshObject("River", land, riverMesh, waterMat, null);
-        river.layer = 4;    // Water: the board bails into it
+        river.layer = 4;    // Water
         river.AddComponent<MeshCollider>().sharedMesh = riverMesh;
 
         // ---- trees
@@ -581,9 +581,6 @@ public static partial class SkateWorldBuilder
         go.transform.position = Vector3.zero;
         go.GetComponent<MeshFilter>().sharedMesh = mesh;
         go.GetComponent<MeshRenderer>().sharedMaterials = new[] { toonMat, outlineMat };
-        var rail = root.gameObject.AddComponent<SkateRail>();   // the board locks onto it
-        rail.points = pts;
-        rail.radius = 0.05f;
         foreach (var p in pts) keepClear.Add(new Vector3(p.x, p.z, 6f));
     }
 
@@ -776,92 +773,13 @@ public static partial class SkateWorldBuilder
         var ctrl = root.GetComponent<SlideController>();
         ctrl.startPoint = start;
         ctrl.cam = cam;
-        ctrl.board = BuildBoard(root.transform);
         ctrl.rider = BuildRider(root.transform);
-        ctrl.sparks = BuildSparks(root.transform);
         return ctrl;
     }
 
-    // the board you see when you look down (no collider; it's just to look at). Deliberately plain
-    // so it sits in any of the places you'll skate through: simple chunky shapes and flat colours,
-    // no graphics or fine detail. Charcoal grip with a light wood edge, one accent colour on the
-    // bottom, grey trucks and off-white wheels. A bit bigger than a real board so it reads well.
-    const float DeckHalfLen = 0.56f, DeckHalfWidth = 0.21f, DeckBottom = 0.14f, DeckThick = 0.032f, KickStart = 0.37f;
-    static readonly Color32 BoardAccent = new Color32(236, 112, 86, 255);
+    static readonly Color32 RunnerAccent = new Color32(236, 112, 86, 255);
 
-    static float DeckHalfW(float z)
-    {
-        float e = Mathf.Abs(z) - (DeckHalfLen - DeckHalfWidth);   // rounded ends: a semicircle of the deck's half width
-        return e <= 0f ? DeckHalfWidth : DeckHalfWidth * Mathf.Sqrt(Mathf.Max(0f, 1f - (e / DeckHalfWidth) * (e / DeckHalfWidth)));
-    }
-
-    static float DeckLift(float z)
-    {
-        float k = Mathf.Abs(z) - KickStart;                         // nose and tail kick up about 18 degrees
-        return k <= 0f ? 0f : (k < 0.06f ? k * k / 0.12f * 0.32f : 0.06f * 0.16f + (k - 0.06f) * 0.32f);
-    }
-
-    static Transform BuildBoard(Transform parent)
-    {
-        Color32 grip = new Color32(52, 50, 58, 255), wood = new Color32(232, 208, 168, 255);
-        Color32 metal = new Color32(178, 180, 188, 255), wheel = new Color32(244, 240, 230, 255);
-        var b = new SkateMeshKit();
-
-        // the deck: rows across its length, top (grip), bottom (accent) and edges (wood)
-        int rows = 96;
-        var topL = new Vector3[rows + 1]; var topR = new Vector3[rows + 1];
-        for (int i = 0; i <= rows; i++)
-        {
-            float z = Mathf.Lerp(-DeckHalfLen, DeckHalfLen, i / (float)rows);
-            float w = Mathf.Max(DeckHalfW(z), 0.004f), y = DeckBottom + DeckThick + DeckLift(z);
-            topL[i] = new Vector3(-w, y, z); topR[i] = new Vector3(w, y, z);
-        }
-        Vector3 down = Vector3.down * DeckThick;
-        for (int i = 0; i < rows; i++)
-        {
-            Vector3 along = topL[i + 1] - topL[i];
-            Vector3 up = Vector3.Cross(along, Vector3.right).normalized;
-            if (up.y < 0f) up = -up;
-            b.Quad(topL[i], topR[i], topR[i + 1], topL[i + 1], up, grip);
-            b.Quad(topL[i] + down, topR[i] + down, topR[i + 1] + down, topL[i + 1] + down, -up, BoardAccent);
-            b.Quad(topL[i], topL[i + 1], topL[i + 1] + down, topL[i] + down, Vector3.left + 0.2f * Vector3.forward * Mathf.Sign(topL[i].z), wood);
-            b.Quad(topR[i], topR[i + 1], topR[i + 1] + down, topR[i] + down, Vector3.right + 0.2f * Vector3.forward * Mathf.Sign(topR[i].z), wood);
-        }
-        // a wood line round the edge of the grip, so the shape reads from above
-        for (int i = 0; i < rows; i++)
-        {
-            Vector3 lift = Vector3.up * 0.002f;
-            float inset = 0.014f;
-            Vector3 l0 = topL[i] + lift, l1 = topL[i + 1] + lift, r0 = topR[i] + lift, r1 = topR[i + 1] + lift;
-            Vector3 il0 = l0 + Vector3.right * Mathf.Min(inset, -l0.x), il1 = l1 + Vector3.right * Mathf.Min(inset, -l1.x);
-            Vector3 ir0 = r0 + Vector3.left * Mathf.Min(inset, r0.x), ir1 = r1 + Vector3.left * Mathf.Min(inset, r1.x);
-            b.Quad(l0, il0, il1, l1, Vector3.up, wood);
-            b.Quad(r0, ir0, ir1, r1, Vector3.up, wood);
-        }
-
-        foreach (float s in new[] { -1f, 1f })
-        {
-            float tz = s * 0.3f, axle = 0.058f;
-            // truck: baseplate, kingpin, and a round hanger out to the wheels
-            b.Box(new Vector3(0f, DeckBottom - 0.01f, tz), new Vector3(0.11f, 0.02f, 0.12f), Quaternion.identity, metal);
-            b.Cylinder(new Vector3(0f, DeckBottom - 0.02f, tz), new Vector3(0f, axle + 0.01f, tz), 0.03f, 10, metal);
-            b.Cylinder(new Vector3(-0.17f, axle, tz), new Vector3(0.17f, axle, tz), 0.022f, 10, metal);
-            // chunky wheels
-            foreach (float w in new[] { -1f, 1f })
-                b.Cylinder(new Vector3(w * 0.15f, axle, tz), new Vector3(w * 0.205f, axle, tz), axle, 18, wheel);
-        }
-        var mesh = b.Build("Board");
-        SaveFeatureMesh(mesh);
-        var go = new GameObject("Board", typeof(MeshFilter), typeof(MeshRenderer));
-        go.transform.SetParent(parent, false);
-        go.transform.localPosition = new Vector3(0f, -0.35f, 0f);
-        go.transform.localScale = Vector3.one * 1.2f;   // bigger again: about 1.35 m long
-        go.GetComponent<MeshFilter>().sharedMesh = mesh;
-        go.GetComponent<MeshRenderer>().sharedMaterials = new[] { toonMat, outlineMat };
-        return go.transform;
-    }
-
-    // the skater, seen in third person: same plain style as the board. Pivot at the feet; the body
+    // the runner, seen in third person: plain, flat colours so they fit any level. Pivot at the feet; the body
     // and each leg are separate parts pivoting at the hips so the controller can pose them.
     static Transform BuildRider(Transform parent)
     {
@@ -876,8 +794,8 @@ public static partial class SkateWorldBuilder
         body.Ellipsoid(new Vector3(0f, 0.04f, 0f), new Vector3(0.17f, 0.1f, 0.12f), Quaternion.identity, 12, 6, pants);       // hips
         body.Cylinder(new Vector3(0f, 0.6f, 0f), new Vector3(0f, 0.7f, 0f), 0.05f, 8, skin);                                   // neck
         body.Ellipsoid(new Vector3(0f, 0.8f, 0.01f), new Vector3(0.12f, 0.14f, 0.13f), Quaternion.identity, 12, 8, skin);     // head
-        body.Ellipsoid(new Vector3(0f, 0.86f, 0f), new Vector3(0.13f, 0.09f, 0.135f), Quaternion.identity, 12, 6, BoardAccent); // cap
-        body.Box(new Vector3(0f, 0.86f, 0.14f), new Vector3(0.18f, 0.02f, 0.12f), Quaternion.identity, BoardAccent);            // brim
+        body.Ellipsoid(new Vector3(0f, 0.86f, 0f), new Vector3(0.13f, 0.09f, 0.135f), Quaternion.identity, 12, 6, RunnerAccent); // cap
+        body.Box(new Vector3(0f, 0.86f, 0.14f), new Vector3(0.18f, 0.02f, 0.12f), Quaternion.identity, RunnerAccent);            // brim
         foreach (float sx in new[] { -1f, 1f })
         {
             body.Cylinder(new Vector3(sx * 0.2f, 0.52f, 0f), new Vector3(sx * 0.27f, 0.08f, 0.02f), 0.05f, 8, top);
@@ -896,44 +814,6 @@ public static partial class SkateWorldBuilder
         root.Find("Body").localPosition = new Vector3(0f, 0.9f, 0f);
         root.gameObject.SetActive(false);
         return root;
-    }
-
-    // little streaks of light thrown off the rail while you grind (the controller turns them on and off)
-    static ParticleSystem BuildSparks(Transform parent)
-    {
-        var go = new GameObject("Sparks", typeof(ParticleSystem));
-        go.transform.SetParent(parent, false);
-        var ps = go.GetComponent<ParticleSystem>();
-        ps.Stop(true, ParticleSystemStopBehavior.StopEmittingAndClear);
-        var main = ps.main;
-        main.playOnAwake = true;
-        main.loop = true;
-        main.startLifetime = new ParticleSystem.MinMaxCurve(0.15f, 0.35f);
-        main.startSpeed = new ParticleSystem.MinMaxCurve(2.5f, 6f);
-        main.startSize = new ParticleSystem.MinMaxCurve(0.025f, 0.05f);
-        main.startColor = new ParticleSystem.MinMaxGradient(new Color(1f, 0.95f, 0.6f), new Color(1f, 0.6f, 0.3f));
-        main.gravityModifier = 1.5f;
-        main.simulationSpace = ParticleSystemSimulationSpace.World;
-        main.maxParticles = 300;
-        var em = ps.emission;
-        em.rateOverTime = 90f;
-        em.enabled = false;
-        var shape = ps.shape;
-        shape.shapeType = ParticleSystemShapeType.Cone;
-        shape.angle = 30f;
-        shape.radius = 0.05f;
-        var fade = ps.colorOverLifetime;
-        fade.enabled = true;
-        var grad = new Gradient();
-        grad.SetKeys(new[] { new GradientColorKey(Color.white, 0f), new GradientColorKey(new Color(1f, 0.5f, 0.3f), 1f) },
-                     new[] { new GradientAlphaKey(1f, 0f), new GradientAlphaKey(0f, 1f) });
-        fade.color = grad;
-        var r = go.GetComponent<ParticleSystemRenderer>();
-        r.renderMode = ParticleSystemRenderMode.Stretch;
-        r.velocityScale = 0.05f;
-        r.lengthScale = 1f;
-        r.sharedMaterial = Mat("Sparks", "Sprites/Default");
-        return ps;
     }
 
     static Transform RiderPart(string name, Transform root, SkateMeshKit kit)
@@ -1028,27 +908,15 @@ public static partial class SkateWorldBuilder
         Shot(cam, new Vector3(770f, Base(700f) + 2.5f, 27f), new Vector3(800f, Base(700f) + 1f, 27f), "06-halfpipe.png");
         Shot(cam, OnPath(300f, 20f) + Vector3.up * 40f, OnPath(300f, -60f), "08-river.png");
 
-        // the board: a close-up from the side, and what you see looking down while riding
-        var board = player.board;
-        bool was = board.gameObject.activeSelf;
-        board.gameObject.SetActive(true);
-        Vector3 bp = new Vector3(700f, Base(700f), 30f);
-        board.SetPositionAndRotation(bp, Quaternion.LookRotation(Vector3.right));
-        Shot(cam, bp + new Vector3(-0.5f, 0.55f, -1.1f), bp + Vector3.up * 0.1f, "09-board.png");
-        Shot(cam, bp + new Vector3(-0.1f, 1.5f, 0f), bp + new Vector3(0.8f, 0f, 0f), "10-board-first-person.png");
-        // the skater standing on it, as seen in third person
+        // the runner, as seen in third person
         var rider = player.rider;
+        Vector3 bp = new Vector3(700f, Base(700f), 30f);
         rider.gameObject.SetActive(true);
-        rider.SetPositionAndRotation(bp + Vector3.up * 0.2f, board.rotation * Quaternion.Euler(0f, 90f, 0f));
-        rider.Find("Leg L").localRotation = Quaternion.Euler(0f, 0f, -10f);
-        rider.Find("Leg R").localRotation = Quaternion.Euler(0f, 0f, 10f);
-        Shot(cam, bp + new Vector3(-1.2f, 2.0f, -3.4f), bp + Vector3.up * 0.9f, "11-rider.png");
+        rider.SetPositionAndRotation(bp, Quaternion.LookRotation(Vector3.left));
+        Shot(cam, bp + new Vector3(-1.2f, 2.0f, -3.4f), bp + Vector3.up * 0.9f, "11-runner.png");
         rider.gameObject.SetActive(false);
         rider.localPosition = new Vector3(0f, -0.35f, 0f);
         rider.localRotation = Quaternion.identity;
-        board.gameObject.SetActive(was);
-        board.localPosition = new Vector3(0f, -0.35f, 0f);
-        board.localRotation = Quaternion.identity;
     }
 
     static void Shot(Camera cam, Vector3 from, Vector3 lookAt, string file)
