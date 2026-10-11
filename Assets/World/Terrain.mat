@@ -1,0 +1,54 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!21 &2100000
+Material:
+  serializedVersion: 8
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_Name: Terrain
+  m_Shader: {fileID: 4800000, guid: 6589ae55b8040774ca5b6e38d93979af, type: 3}
+  m_Parent: {fileID: 0}
+  m_ModifiedSerializedProperties: 0
+  m_ValidKeywords: []
+  m_InvalidKeywords: []
+  m_LightmapFlags: 4
+  m_EnableInstancingVariants: 0
+  m_DoubleSidedGI: 0
+  m_CustomRenderQueue: -1
+  stringTagMap: {}
+  disabledShaderPasses: []
+  m_LockedProperties: 
+  m_SavedProperties:
+    serializedVersion: 3
+    m_TexEnvs: []
+    m_Ints: []
+    m_Floats:
+    - _CliffSlope: 0.74
+    - _FogDensity: 0.0011
+    - _FogHeight: 220
+    - _FogMax: 0.93
+    - _SnowLine: 230
+    m_Colors:
+    - _Flower: {r: 0.97, g: 0.62, b: 0.78, a: 1}
+    - _FlowerShade: {r: 0.8, g: 0.46, b: 0.72, a: 1}
+    - _Grass: {r: 0.62, g: 0.92, b: 0.86, a: 1}
+    - _GrassShade: {r: 0.4, g: 0.7, b: 0.82, a: 1}
+    - _Ground: {r: 0.99, g: 0.88, b: 0.82, a: 1}
+    - _GroundShade: {r: 0.86, g: 0.64, b: 0.78, a: 1}
+    - _Haze: {r: 0.98, g: 0.88, b: 0.94, a: 1}
+    - _HazeHigh: {r: 0.86, g: 0.95, b: 1, a: 1}
+    - _Path: {r: 0.98, g: 0.76, b: 0.8, a: 1}
+    - _PathEdge: {r: 0.62, g: 0.46, b: 0.82, a: 1}
+    - _PathShade: {r: 0.82, g: 0.54, b: 0.74, a: 1}
+    - _Plaza: {r: 0.97, g: 0.92, b: 0.97, a: 1}
+    - _PlazaLine: {r: 0.86, g: 0.76, b: 0.93, a: 1}
+    - _PlazaShade: {r: 0.78, g: 0.72, b: 0.92, a: 1}
+    - _Rock: {r: 0.74, g: 0.68, b: 0.93, a: 1}
+    - _RockShade: {r: 0.42, g: 0.34, b: 0.7, a: 1}
+    - _Snow: {r: 1, g: 0.99, b: 1, a: 1}
+    - _SnowShade: {r: 0.66, g: 0.86, b: 0.98, a: 1}
+    - _SunDir: {r: -0.62, g: 0.4, b: 0.55, a: 0}
+  m_BuildTextureStacks: []
+  m_AllowLocking: 1

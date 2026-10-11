@@ -6,6 +6,6 @@ EditorBuildSettings:
   serializedVersion: 2
   m_Scenes:
   - enabled: 1
-    path: Assets/Scenes/SampleScene.unity
-    guid: d7db773b37b8c964184085718458dfb5
+    path: Assets/Scenes/SkatePark.unity
+    guid: 7209f0bed2a343647bf628835b218b49
   m_configObjects: {}
