@@ -1,5 +1,10 @@
 # 3daigamesolo - notes for Claude
 
+## When a new prompt arrives: close the game
+
+The user wants the game closed as soon as they send a prompt. `.claude/settings.json` has a `UserPromptSubmit` hook that does this; if it didn't run (the game is still open), close it yourself first:
+`Get-Process 3daigamesolo -ErrorAction SilentlyContinue | Stop-Process -Force`
+
 ## After making changes: rebuild and open the game
 
 Whenever you change anything in this project, finish by building the game and opening it so it can be played straight away:

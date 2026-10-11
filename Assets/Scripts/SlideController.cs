@@ -12,7 +12,8 @@ public struct SlideInput
 // First person. On foot by default: slow, snappy walking. Hold Shift and you're on the board
 // (it appears under you): faster, it builds speed more gradually, and downhill speed is kept
 // and steered rather than braked. Let go of Shift and you step off and slow to walking pace.
-// Gravity is heavier than Unity's default so jumps and drops don't feel floaty.
+// Gravity is heavier than Unity's default so jumps and drops don't feel floaty; a little less so
+// on the board, which glides and hangs in the air a bit more.
 [RequireComponent(typeof(Rigidbody), typeof(SphereCollider))]
 public class SlideController : MonoBehaviour
 {
@@ -39,9 +40,11 @@ public class SlideController : MonoBehaviour
     [Tooltip("How quickly pushing gets you up to board speed.")]
     public float boardAccel = 12f;
     [Tooltip("With nothing else pressed, how quickly the board slows you.")]
-    public float boardRollDecel = 3f;
+    public float boardRollDecel = 2f;
     [Tooltip("Degrees per second downhill speed turns when you're going faster than you can push.")]
-    public float fastTurnRate = 200f;
+    public float fastTurnRate = 150f;
+    [Tooltip("Gravity multiplier while on the board; lower than on foot so riding feels a bit floatier.")]
+    public float boardGravityScale = 1.6f;
     [Tooltip("Overall speed cap, mostly reached going downhill on the board.")]
     public float maxSpeed = 22f;
 
@@ -147,7 +150,7 @@ public class SlideController : MonoBehaviour
         float top = OnBoard ? boardSpeed : walkSpeed;
 
         Vector3 v = rb.linearVelocity;
-        v += Physics.gravity * (gravityScale - 1f) * dt;
+        v += Physics.gravity * ((OnBoard ? boardGravityScale : gravityScale) - 1f) * dt;
         if (Grounded)
         {
             // work in the plane of the ground; the part into/out of it is left to physics

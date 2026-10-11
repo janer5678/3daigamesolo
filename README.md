@@ -6,7 +6,7 @@ Open the project and play `Assets/Scenes/SkatePark.unity`. You start at the top 
 
 ## Controls
 
-First person. You walk by default; **hold Shift to ride the board** (it appears under your feet). Let go and you step off and slow back to walking pace. Gravity is heavier than Unity's default so jumps don't feel floaty.
+First person. You walk by default; **hold Shift to ride the board** (it appears under your feet). Let go and you step off and slow back to walking pace. Gravity is heavier than Unity's default so jumps don't feel floaty; on the board it's a little lighter, so riding glides and hangs in the air a bit more.
 
 | Key | |
 |---|---|

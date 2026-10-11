@@ -126,6 +126,15 @@ public static class SlideTests
         for (int i = 0; i < 80; i++) { Step(new SlideInput()); peak = Mathf.Max(peak, c.transform.position.y); }
         float height = peak - y0;
 
+        // on the board it's a bit floatier: higher and longer
+        Place(PlazaSpot, Vector3.zero);
+        y0 = c.transform.position.y; float boardPeak = y0, hang = 0f;
+        Step(new SlideInput { push = true, jump = true });
+        while (!c.Grounded && hang < 3f || hang < 0.1f) { Step(new SlideInput { push = true }); hang += Dt; boardPeak = Mathf.Max(boardPeak, c.transform.position.y); }
+        float boardHeight = boardPeak - y0;
+        Report("board is floatier than on foot", boardHeight > height + 0.15f && boardHeight < 1.3f,
+               "on foot " + height.ToString("F2") + "m; on the board " + boardHeight.ToString("F2") + "m with " + hang.ToString("F2") + "s in the air");
+
         Place(PlazaSpot, new Vector3(11f, 0f, 0f));
         Step(new SlideInput { forward = 1f, jump = true });
         float air = 0f;
