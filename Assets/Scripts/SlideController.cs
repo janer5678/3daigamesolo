@@ -30,8 +30,10 @@ public class SlideController : MonoBehaviour
     public float fallLimit = -300f;
     [Tooltip("The runner, seen in third person. Children: Body, Leg L, Leg R (pivots at the hips).")]
     public Transform rider;
-    [Tooltip("The skateboard lying in the level. Run over it to ride it.")]
+    [Tooltip("Your skateboard.")]
     public Transform board;
+    [Tooltip("You always have the board: you start on it, you're back on it after a bail, and right click steps off (carrying it) and back on.")]
+    public bool alwaysBoard = true;
     [Tooltip("The last checkpoint you reached; you're put back here when you fall or press R.")]
     public Transform checkpoint;
 
@@ -179,6 +181,8 @@ public class SlideController : MonoBehaviour
     bool flippedThisAir;
     float flip = -1f;      // kickflip progress 0..1, or <0 when not flipping
     Vector3 boardVel;      // the board sliding off on its own after a bail
+    bool carrying;         // stepped off (right click): carrying the board, right click again to drop back on
+    bool bailedOff;        // knocked off: back on when you've recovered
     float boardSpin;
     float stunTimer;       // down after a bail
     Vector3 takeoffDir;    // which way you were going when you left the ground
@@ -219,6 +223,7 @@ public class SlideController : MonoBehaviour
         rb.linearVelocity = Vector3.zero;
         jumpCooldown = 0f;
         holdingJump = sliding = touchingWall = false;
+        if (alwaysBoard && board != null) { OnBoard = true; carrying = bailedOff = false; boardVel = Vector3.zero; boardRot = Quaternion.LookRotation(s.forward); }
         jumpBuffer = 0f;
         sinceGrounded = 1f;
         slideJumpTimer = steerDelay = 0f;
@@ -503,6 +508,14 @@ public class SlideController : MonoBehaviour
         if (board == null) return;
         pickupBlock -= dt;
         Vector3 feet = rb.position - Vector3.up * ball.radius;
+        if (alwaysBoard)
+        {
+            // step off (carrying it) and back on with right click; back on by itself after a bail
+            if (inp.dismount && OnBoard) { OnBoard = false; carrying = true; }
+            else if (inp.dismount && carrying) Remount();
+            else if (bailedOff && stunTimer <= 0f) Remount();
+            return;
+        }
         if (OnBoard && inp.dismount)
         {
             OnBoard = false;
@@ -539,6 +552,7 @@ public class SlideController : MonoBehaviour
         rb.linearVelocity = new Vector3(v.x * 0.3f, Mathf.Max(v.y, 0f), v.z * 0.3f);
         stunTimer = bailStun;
         pickupBlock = 0.8f;
+        bailedOff = true;
         flip = -1f;
         SlideHUD.Flash(why);
     }
@@ -685,6 +699,15 @@ public class SlideController : MonoBehaviour
         rb.linearVelocity = v;
         lastFlatSpeed = new Vector3(v.x, 0f, v.z).magnitude;
     }
+    void Remount()
+    {
+        OnBoard = true;
+        carrying = bailedOff = false;
+        boardVel = Vector3.zero;
+        boardRot = Quaternion.Euler(0f, yaw, 0f);
+        sliding = false;
+    }
+
     // a wall touching you, if any (checked all the way round)
     bool FindWall(out Vector3 normal)
     {
@@ -746,6 +769,7 @@ public class SlideController : MonoBehaviour
             if (flip >= 1f || !OnBoard) flip = -1f;
             else { pop = Mathf.Sin(flip * Mathf.PI) * flipHop; spin = Mathf.SmoothStep(0f, 360f, flip); }
         }
+        if (board != null) board.gameObject.SetActive(!carrying);   // carried: tucked under your arm, out of sight
         if (board != null && OnBoard)
         {
             Vector3 heading = Vector3.ProjectOnPlane(rb.linearVelocity, up);

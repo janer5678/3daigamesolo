@@ -14,6 +14,7 @@ public static class SlideTests
     {
         c = Object.FindFirstObjectByType<SlideController>();
         c.Setup();
+        c.alwaysBoard = false;   // the runs below are mostly on foot; the always-on board gets its own check
         var mode = Physics.simulationMode;
         Physics.simulationMode = SimulationMode.Script;
         Physics.SyncTransforms();
@@ -28,6 +29,7 @@ public static class SlideTests
         finally
         {
             Physics.simulationMode = mode;
+            c.alwaysBoard = true;
             c.Respawn();
         }
         Debug.Log("SLIDE_TESTS_DONE failures=" + failures);
@@ -207,6 +209,7 @@ public static class SlideTests
     {
         c = Object.FindFirstObjectByType<SlideController>();
         c.Setup();
+        c.alwaysBoard = false;   // the runs below are mostly on foot; the always-on board gets its own check
         var mode = Physics.simulationMode;
         Physics.simulationMode = SimulationMode.Script;
         Physics.SyncTransforms();
@@ -242,6 +245,7 @@ public static class SlideTests
         finally
         {
             Physics.simulationMode = mode;
+            c.alwaysBoard = true;
             c.Respawn();
         }
         Debug.Log("SLIDE_TESTS_DONE palace failures=" + failures);
@@ -337,6 +341,7 @@ public static class SlideTests
     {
         c = Object.FindFirstObjectByType<SlideController>();
         c.Setup();
+        c.alwaysBoard = false;   // the runs below are mostly on foot; the always-on board gets its own check
         var mode = Physics.simulationMode;
         Physics.simulationMode = SimulationMode.Script;
         Physics.SyncTransforms();
@@ -430,17 +435,40 @@ public static class SlideTests
             float apart = Vector3.Distance(c.board.position, c.transform.position);
             c.ResetBoard();
 
-            Report("city: bus, garage, power line, alley, stairs, bail", busRide && garage && lineUp && alley && stairs && bailed && apart > 2f,
+            // the board's always with you: on it from the start, right click steps off (carrying it) and
+            // back on, and after a bail you're back on it once you've recovered
+            c.alwaysBoard = true;
+            c.Respawn();
+            Physics.SyncTransforms();
+            bool startOn = c.OnBoard;
+            Step(new SlideInput { dismount = true });
+            bool stepOff = !c.OnBoard;
+            Step(new SlideInput { dismount = true });
+            bool backOn = c.OnBoard;
+            Place(new Vector3(-40f, 0.6f, -8f), Vector3.zero);
+            rb.position = c.transform.position + Vector3.up * 8f; c.transform.position = rb.position;
+            rb.linearVelocity = new Vector3(8f, 0f, 0f);
+            Physics.SyncTransforms();
+            bool knocked = false;
+            for (int i = 0; i < 80 && !knocked; i++) { Step(new SlideInput()); knocked = c.Bailed && !c.OnBoard; }
+            for (int i = 0; i < 60; i++) Step(new SlideInput());
+            bool remounted = knocked && c.OnBoard;
+            c.alwaysBoard = false;
+            bool always = startOn && stepOff && backOn && remounted;
+            string alwaysLog = "; always-on board: " + (startOn ? "on it from the start" : "NOT ON IT AT THE START") + ", right click " + (stepOff && backOn ? "off and back on" : "DIDN'T TOGGLE")
+                               + ", after a bail " + (remounted ? "back on it" : "NOT BACK ON");
+            Report("city: bus, garage, power line, alley, stairs, bail", busRide && garage && lineUp && alley && stairs && bailed && apart > 2f && always,
                    "bus roof: carried " + carried.ToString("F0") + "m, lowest " + lowest.ToString("F1") + "m"
                    + "; garage: " + (garage ? "ran up to the roof (" + garageTop.ToString("F1") + "m)" : "STUCK at waypoint " + wp + " (" + garageTop.ToString("F1") + "m)")
                    + "; power line: " + (lineUp ? "ground up it to the 22m roof" : "FAILED (mounted " + mounted + ", grinding " + grinding + ", ended at " + endUp.ToString("F1") + ")")
                    + "; alley: " + jumps + " wall jumps, up to " + alleyTop.ToString("F1") + "m"
                    + "; stairs: up to " + stairTop.ToString("F1") + "m"
-                   + "; 8m drop on the board: " + (bailed ? "bailed, board slid " + apart.ToString("F1") + "m away" : "NO BAIL"));
+                   + "; 8m drop on the board: " + (bailed ? "bailed, board slid " + apart.ToString("F1") + "m away" : "NO BAIL") + alwaysLog);
         }
         finally
         {
             Physics.simulationMode = mode;
+            c.alwaysBoard = true;
             c.Respawn();
         }
         Debug.Log("SLIDE_TESTS_DONE city failures=" + failures);
