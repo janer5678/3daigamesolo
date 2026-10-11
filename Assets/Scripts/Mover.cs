@@ -40,6 +40,7 @@ public class Mover : MonoBehaviour
         total = 0f;
         for (int i = 0; i < n; i++) { lengths[i] = Vector3.Distance(path[i], path[(i + 1) % path.Length]); total += lengths[i]; }
         at = Mathf.Repeat(startAt, total);
+        dirSign = 1f; waitTimer = 0f; lastStop = -1f;
         lastTarget = Place(at, true);
     }
 

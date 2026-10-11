@@ -2,10 +2,11 @@
 
 Everything in the level is meant to look like real photos stuck on low-poly shapes (the Mallbat look):
 building fronts, shopfronts, neon signs, ads, tarmac, pavement, vehicles, vending machines, graffiti.
-Ground textures are made to tile seamlessly; the rest are used whole on a face or a panel.
+Ground textures are made seamless (the seam is repainted by the model, so they repeat with no join); the rest are used whole on a face or a panel.
 
     Tools/imggen-venv/Scripts/python Tools/gen_akiba_photos.py            # make anything missing
     Tools/imggen-venv/Scripts/python Tools/gen_akiba_photos.py --redo ad_  # remake everything starting ad_
+    Tools/imggen-venv/Scripts/python Tools/gen_akiba_photos.py --tiles     # remake every repeating texture
 
 Output: Assets/Akiba/Photos/<name>.png
 """
@@ -14,8 +15,8 @@ import sys
 
 import numpy as np
 import torch
-from diffusers import StableDiffusionXLPipeline
-from PIL import Image
+from diffusers import StableDiffusionXLInpaintPipeline, StableDiffusionXLPipeline
+from PIL import Image, ImageFilter
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 OUT = os.path.join(ROOT, "Assets", "Akiba", "Photos")
@@ -90,23 +91,35 @@ job("photo_train", f"{PHOTO}, side view of a silver JR Yamanote line train carri
 job("photo_vending", f"{PHOTO}, front of a Japanese drinks vending machine glowing at night, rows of bottles, {FRONT}, machine fills the frame", (512, 1024))
 job("photo_gacha", f"{PHOTO}, front of a row of capsule toy gashapon machines, colourful, {FRONT}, fills the frame", (768, 768))
 
+# the floating pieces of land, escalators, the plaza
+job("photo_earth", f"{PHOTO}, close-up of a rough cliff face of packed brown earth, rocks and dangling roots, seamless texture, uniform, flat lighting", (768, 768), True)
+job("photo_grass", f"{PHOTO}, top-down view of short green grass lawn, seamless texture, uniform", (512, 512), True)
+job("photo_escalator", f"{PHOTO}, top-down view of grooved aluminium escalator steps with yellow edge lines, seamless texture, uniform", (512, 512), True)
+job("photo_plaza", f"{PHOTO}, top-down view of a city plaza paved with grey and red granite tiles, seamless texture, uniform", (768, 768), True)
+job("photo_screen", f"{PHOTO} of a giant glowing LED video screen on a Tokyo building showing a colourful anime idol advert, {FRONT}, the screen fills the frame", (1024, 576), False, NEG.replace("cartoon, illustration, painting, ", ""))
 
-def make_tileable(img):
-    """Blend each half over the other so the edges wrap."""
-    a = np.asarray(img).astype(np.float32)
-    h, w = a.shape[:2]
-    rolled = np.roll(np.roll(a, h // 2, axis=0), w // 2, axis=1)
-    y = np.abs(np.linspace(-1, 1, h))[:, None]
-    x = np.abs(np.linspace(-1, 1, w))[None, :]
-    m = np.clip(1.6 - np.maximum(x, y) * 1.6, 0, 1)[..., None]   # 1 in the middle, 0 at the edges
-    out = a * m + rolled * (1 - m)
-    return Image.fromarray(out.clip(0, 255).astype(np.uint8))
+
+def make_seamless(inpaint, img, prompt, neg, g):
+    """Shift the picture by half (so its edges meet in a cross through the middle), repaint a band
+    along that cross so it joins up, and the picture now repeats with no seams."""
+    w, h = img.size
+    rolled = Image.fromarray(np.roll(np.roll(np.asarray(img), h // 2, axis=0), w // 2, axis=1))
+    band = max(48, w // 7)
+    mask = np.zeros((h, w), np.uint8)
+    mask[h // 2 - band // 2:h // 2 + band // 2, :] = 255
+    mask[:, w // 2 - band // 2:w // 2 + band // 2] = 255
+    out = inpaint(prompt=prompt, negative_prompt=neg, image=rolled, mask_image=Image.fromarray(mask), width=w, height=h,
+                  strength=0.99, num_inference_steps=30, guidance_scale=6.5, generator=g).images[0]
+    # keep the untouched parts exactly as they were; blend the repainted band in softly
+    soft = Image.fromarray(mask).filter(ImageFilter.GaussianBlur(band // 6))
+    return Image.composite(out.resize((w, h)), rolled, soft)
 
 
 def main():
     os.makedirs(OUT, exist_ok=True)
     redo = sys.argv[sys.argv.index("--redo") + 1] if "--redo" in sys.argv else None
-    todo = [n for n in JOBS if redo and n.startswith(redo) or not os.path.exists(os.path.join(OUT, n + ".png"))]
+    tiles = "--tiles" in sys.argv   # remake every texture that repeats
+    todo = [n for n in JOBS if redo and n.startswith(redo) or tiles and JOBS[n][2] or not os.path.exists(os.path.join(OUT, n + ".png"))]
     if not todo:
         print("nothing to do")
         return
@@ -114,14 +127,16 @@ def main():
     src = local if os.path.exists(os.path.join(local, "unet", "diffusion_pytorch_model.fp16.safetensors")) else "stabilityai/stable-diffusion-xl-base-1.0"
     pipe = StableDiffusionXLPipeline.from_pretrained(src, torch_dtype=torch.float16, variant="fp16", use_safetensors=True).to("cuda")
     pipe.set_progress_bar_config(disable=True)
+    inpaint = StableDiffusionXLInpaintPipeline.from_pipe(pipe)
+    inpaint.set_progress_bar_config(disable=True)
     for k, name in enumerate(todo):
         prompt, size, tile, neg = JOBS[name]
         g = torch.Generator("cuda").manual_seed(1000 + k * 7 + len(name))
         w, h = max(size[0], 512), max(size[1], 512)
         img = pipe(prompt=prompt, negative_prompt=neg, width=w // 8 * 8, height=h // 8 * 8, num_inference_steps=28, guidance_scale=6.5, generator=g).images[0]
-        img = img.resize(size, Image.LANCZOS)
         if tile:
-            img = make_tileable(img)
+            img = make_seamless(inpaint, img, prompt, neg, g)
+        img = img.resize(size, Image.LANCZOS)
         # textures for an old-school look: keep them small
         small = (size[0] // 2, size[1] // 2)
         img.resize(small, Image.LANCZOS).save(os.path.join(OUT, name + ".png"))

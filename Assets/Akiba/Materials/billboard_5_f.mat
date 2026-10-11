@@ -33,7 +33,7 @@ Material:
     - _Emission: 1
     m_Colors:
     - _Color: {r: 1, g: 1, b: 1, a: 1}
-    - _Flicker: {r: 0.9039612, g: 0.60775805, b: 0.362823, a: 0}
+    - _Flicker: {r: 0.59111637, g: 0.6047555, b: 0.2945628, a: 0}
     - _Scroll: {r: 0, g: 0, b: 0, a: 0}
   m_BuildTextureStacks: []
   m_AllowLocking: 1

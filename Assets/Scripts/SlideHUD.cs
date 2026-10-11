@@ -1,6 +1,7 @@
 using UnityEngine;
 
-// Speed, a one-line controls hint, the level's name when you arrive, and short messages (checkpoints).
+// Speed, a one-line controls hint, the level's name when you arrive, short messages (checkpoints), and
+// while you're flying a car, the seconds it's got left.
 public class SlideHUD : MonoBehaviour
 {
     public SlideController player;
@@ -59,11 +60,15 @@ public class SlideHUD : MonoBehaviour
             Outlined(new Rect(W - 330 * k, 20 * k, 300 * k, 50 * k), Mathf.RoundToInt(player.Speed * 3.6f) + " km/h", Style(Mathf.RoundToInt(34 * k), TextAnchor.UpperRight), Cream);
         if (hintTimer > 0f)
         {
-            Outlined(new Rect(0, H - 90 * k, W, 50 * k), "WASD move    SHIFT faster    SPACE jump (hold: higher)    C slide / powerslide    RIGHT CLICK off/on the board    rocket cars: ride up the back, steer, SPACE up, C down (4s then BOOM)    V camera    TAB level    R checkpoint",
+            Outlined(new Rect(0, H - 90 * k, W, 50 * k), "WASD move    SHIFT faster    SPACE jump (hold: higher)    C slide / powerslide    RIGHT CLICK off/on the board    land on a flying car to fly it: SPACE up, C down, W/S speed    V camera    TAB level    R checkpoint",
                      Style(Mathf.RoundToInt(30 * k), TextAnchor.MiddleCenter), Cream);
             if (!string.IsNullOrEmpty(levelName))
                 Outlined(new Rect(0, 60 * k, W, 90 * k), levelName, Style(Mathf.RoundToInt(72 * k), TextAnchor.MiddleCenter), Cream);
         }
+        // flying a car: how long it's got left before it falls apart
+        if (player != null && player.Piloting)
+            Outlined(new Rect(0, H * 0.16f, W, 90 * k), player.PilotFuse.ToString("0.0"), Style(Mathf.RoundToInt(80 * k), TextAnchor.MiddleCenter),
+                     player.PilotFuse < 1.5f ? new Color(1f, 0.35f, 0.3f) : Cream);
         // the grind you're doing (A/D switches it)
         if (player != null && player.TrickName != null)
             Outlined(new Rect(0, H * 0.62f, W, 70 * k), player.TrickName, Style(Mathf.RoundToInt(56 * k), TextAnchor.MiddleCenter), Cream);

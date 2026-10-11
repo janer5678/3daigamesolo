@@ -16,9 +16,11 @@ public struct SlideInput
 // coyote time and jump buffering, C slides (and you fit under low things). The board's always with you
 // (right click steps off, carrying it, and back on): cruise, or hold Shift to go faster; kickers launch
 // you; jump onto rails to grind them (Shift: power grind; the curvy ones grab you from a couple of metres
-// and rush you along); C is a powerslide that comes out with a boost. Ride up the ramp on the back of a
-// flying car and you fly it. Really big air, and only that, sometimes kickflips the board.
-// V switches first and third person.[RequireComponent(typeof(Rigidbody), typeof(SphereCollider))]
+// and rush you along); C is a powerslide that comes out with a boost. Land on a flying car and you fly
+// it for a few seconds. Escalators and anything moving (buses, lifts, trains) carry you; launch pads
+// throw you along an arc to where they're aimed. Really big air, and only that, sometimes kickflips the
+// board. V switches first and third person.
+[RequireComponent(typeof(Rigidbody), typeof(SphereCollider))]
 public class SlideController : MonoBehaviour
 {
     public Transform cam;
@@ -140,6 +142,8 @@ public class SlideController : MonoBehaviour
     public bool Sliding { get { return sliding; } }
     public bool OnWall { get { return touchingWall; } }
     public bool Piloting { get { return piloting != null; } }
+    public float PilotFuse { get { return piloting != null ? piloting.FuseLeft : 0f; } }
+    public bool Launched { get { return launched; } }
     public bool Flipping { get { return flip >= 0f; } }
     public bool Grinding { get { return grindRail != null; } }
     public SkateRail GrindRail { get { return grindRail; } }
@@ -167,7 +171,8 @@ public class SlideController : MonoBehaviour
     HoverCar piloting;     // the flying car you're stuck on and flying, if any
     float noPilotTimer;
     float rampTimer;
-    Mover lastRide;
+    Object lastRide;       // the moving thing you were standing on last step (a Mover or an Escalator)
+    bool launched;         // thrown by a launch pad: no air drag till you land, so the arc lands you where it's aimed
     Vector3 lastPlatV;
     Vector3 lastGroundNormal = Vector3.up;
     Vector3 wallNormal;
@@ -230,6 +235,7 @@ public class SlideController : MonoBehaviour
         slideJumpTimer = 0f;
         if (piloting != null) { piloting.Release(); piloting = null; }
         noPilotTimer = 0f;
+        launched = false;
         flip = -1f;
         grindRail = null;
         noRailTimer = 0f;
@@ -340,9 +346,16 @@ public class SlideController : MonoBehaviour
             Vector3 lv = rb.linearVelocity;
             if (lv.y < 0f) rb.linearVelocity = new Vector3(lv.x, 0f, lv.z);
         }
-        // ride up the ramp on the back of a flying car and you're stuck on it, flying it
+        // land on a flying car and it's yours: you're stuck on its roof, flying it
         HoverCar hover = Grounded && hit.collider != null ? hit.collider.GetComponentInParent<HoverCar>() : null;
-        if (hover != null && piloting == null && noPilotTimer <= 0f) { piloting = hover; hover.Board(); }
+        if (hover != null && !hover.Exploded && piloting == null && noPilotTimer <= 0f)
+        {
+            piloting = hover;
+            hover.Board(yaw);
+            launched = false;
+            SlideHUD.Flash("FLY IT");
+            return;
+        }
 
         // flying off the top of a ramp on the board: keep all your speed, pointed the way the ramp was going,
         // plus an extra pop, so kickers send you. (At speed you're only on a kicker for a step or two, so
@@ -352,12 +365,9 @@ public class SlideController : MonoBehaviour
         if (OnBoard && Physics.SphereCast(rb.position + Vector3.up * CastBack, ball.radius * 0.9f, Vector3.down, out rh, 0.5f + CastBack, ~0, QueryTriggerInteraction.Ignore)
             && rh.normal.y < 0.97f && rh.normal.y > 0.4f && Vector3.Dot(new Vector3(rh.normal.x, 0f, rh.normal.z), rb.linearVelocity) < 0f)   // a ramp you're going up
         {
-            // the ramp on the back of a flying car: that's you on it, flying it (rather than launched off it)
-            var hc = rh.collider.GetComponentInParent<HoverCar>();
-            if (hc != null && piloting == null && noPilotTimer <= 0f) { piloting = hc; hc.Board(); return; }
             lastGroundNormal = rh.normal; rampTimer = 0.12f;
         }
-        if (OnBoard && !Grounded && rampTimer > 0f && grindRail == null)
+        if (OnBoard && !Grounded && rampTimer > 0f && grindRail == null && !launched && bounceBlock <= 0f)
         {
             Vector3 lv = rb.linearVelocity;
             Vector3 along = Vector3.ProjectOnPlane(lv, lastGroundNormal);
@@ -368,9 +378,17 @@ public class SlideController : MonoBehaviour
             }
         }
 
-        // standing on something moving (a bus, a car, the train): you move with it
-        Mover ride = Grounded && hit.collider != null && hit.collider.attachedRigidbody != null ? hit.collider.attachedRigidbody.GetComponent<Mover>() : null;
-        Vector3 platV = ride != null ? ride.Velocity : Vector3.zero;
+        // standing on something moving (a bus, a car, the train, a lift, an escalator): you move with it
+        Object ride = null;
+        Vector3 platV = Vector3.zero;
+        bool onEscalator = false;
+        if (Grounded && hit.collider != null)
+        {
+            var esc = hit.collider.GetComponent<Escalator>();
+            Mover mover = esc == null && hit.collider.attachedRigidbody != null ? hit.collider.attachedRigidbody.GetComponent<Mover>() : null;
+            if (esc != null) { ride = esc; platV = esc.Velocity; onEscalator = true; }
+            else if (mover != null) { ride = mover; platV = mover.Velocity; }
+        }
         float platUp = platV.y;
         platV.y = 0f;
 
@@ -390,7 +408,14 @@ public class SlideController : MonoBehaviour
 
         Vector3 v = rb.linearVelocity;
         float g = gravityScale;
-        if (!Grounded && v.y < 0f) g *= fallBoost;
+        if (Grounded && jumpCooldown <= 0f && launched)
+        {
+            // landing from a launch pad: you stick it (rolling on at a cruise) rather than shooting off the far side
+            launched = false;
+            Vector3 lf = new Vector3(v.x, 0f, v.z);
+            if (lf.magnitude > boardSpeed) { lf = lf.normalized * boardSpeed; v.x = lf.x; v.z = lf.z; }
+        }
+        if (!Grounded && v.y < 0f && !launched) g *= fallBoost;   // (a launch pad's arc keeps plain gravity, so it lands where it's aimed)
         v += Physics.gravity * (g - 1f) * dt;
 
         // C: slide (on foot). A burst of speed to start it, momentum kept, gentle steering, slowing
@@ -445,6 +470,8 @@ public class SlideController : MonoBehaviour
             }
             else if (OnBoard) vT = BoardGround(vT, wish, top, inp, dt);
             else vT = RunGround(vT, wish, top, dt);
+            // on an escalator with nothing pressed you stand still on it (holding the handrail) rather than rolling back down
+            if (onEscalator && wish.sqrMagnitude < 0.01f) vT = Vector3.MoveTowards(vT, Vector3.zero, 40f * dt);
             v = vT + vN + platV;
             if (ride != null && platUp > 0f) v.y = Mathf.Max(v.y, platUp);   // a flying car going up lifts you with it
         }
@@ -455,7 +482,7 @@ public class SlideController : MonoBehaviour
             Vector3 vH = new Vector3(v.x, 0f, v.z);
             Vector3 wishH = new Vector3(wish.x, 0f, wish.z).normalized * wish.magnitude;
             float accel = airAccel;
-            if (wishH.sqrMagnitude < 0.01f) vH = Vector3.MoveTowards(vH, Vector3.zero, airStop * dt);
+            if (wishH.sqrMagnitude < 0.01f) { if (!launched) vH = Vector3.MoveTowards(vH, Vector3.zero, airStop * dt); }
             else if (vH.magnitude > top)
             {
                 vH = Vector3.RotateTowards(vH, wishH.normalized * vH.magnitude, accel * 0.2f * dt, 0f);
@@ -514,11 +541,24 @@ public class SlideController : MonoBehaviour
                 float s = Mathf.Max(pad.speed, Vector3.Dot(new Vector3(v.x, 0f, v.z), dir));
                 v = new Vector3(dir.x * s, v.y, dir.z * s);
             }
+            var launch = groundCol.GetComponent<LaunchPad>();
+            if (launch != null && bounceBlock <= 0f)
+            {
+                // thrown along the arc to where it's aimed
+                v = launch.velocity;
+                bounceBlock = 0.3f;
+                rampTimer = 0f;
+                sinceGrounded = 1f;
+                StartJump();
+                holdingJump = false;
+                launched = true;
+            }
             var bouncer = groundCol.GetComponent<Bouncer>();
             if (bouncer != null && bounceBlock <= 0f)
             {
                 v.y = bouncer.speed;
                 bounceBlock = 0.3f;
+                rampTimer = 0f;
                 sinceGrounded = 1f;
                 StartJump();
                 holdingJump = false;
@@ -538,7 +578,7 @@ public class SlideController : MonoBehaviour
 
         // the speed cap is on how fast you're going along the ground, so jumping never eats your speed
         Vector3 flat = new Vector3(v.x, 0f, v.z);
-        if (flat.magnitude > maxSpeed)
+        if (flat.magnitude > maxSpeed && !launched)
         {
             flat = flat.normalized * maxSpeed;
             rb.linearVelocity = new Vector3(flat.x, v.y, flat.z);
