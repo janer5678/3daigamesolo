@@ -285,7 +285,8 @@ public static class SkateWorldBuilder
 
         Rect hole = Rect.MinMaxRect(Near.xMin + 20f, Near.yMin + 20f, Near.xMax - 20f, Near.yMax - 20f);
         Mesh farMesh = SaveMesh(Grid("Far ground", Far, FarCell, hole, 1.5f, false), "FarGround");
-        MeshObject("Far ranges (backdrop)", land, farMesh, terrainMat, farOutlineMat);
+        var far = MeshObject("Far ranges (backdrop)", land, farMesh, terrainMat, farOutlineMat);
+        far.AddComponent<MeshCollider>().sharedMesh = farMesh;   // solid too, so riding off the edge of the near ground doesn't drop you through the world
 
         Mesh riverMesh = SaveMesh(River(), "River");
         var river = MeshObject("River", land, riverMesh, waterMat, null);

@@ -5,16 +5,16 @@ public struct SlideInput
 {
     public float forward;   // W/S
     public float strafe;    // A/D
-    public bool push;       // on the board (Q switches it on and off)
-    public bool kick;       // Shift, held: push off on the board
+    public bool push;       // Shift, held: on the board
+    public bool kick;       // pushing off (Shift too in the game; the tests can ride without pushing)
     public bool jump;       // Space, pressed
 }
 
-// On foot by default: slow, snappy walking. Q gets you on the board (it appears under you) and off
-// again: Shift pushes, WASD steers tightly, S brakes, and downhill speed is kept. Off the board you
-// slow back to walking pace. Space jumps; on the board, Space again in the air is a kickflip.
+// On foot by default: slow, snappy walking. Hold Shift and you're on the board (it appears under you)
+// and pushing: it carries momentum, so you glide, carve and drift rather than sprint; WASD steers, S
+// brakes, downhill speed is kept. Let go and you skid back to walking pace. Space jumps; on the board, Space again in the air is a kickflip.
 // On the board you lock onto ramps (you follow the surface instead of flying off it) and onto
-// rails (you grind along them until you jump or step off). Gravity is much heavier than Unity's
+// rails (you grind along them until you jump or let go). Gravity is much heavier than Unity's
 // default, and heavier still on the way down, so jumps are quick and don't hang. V switches between
 // first and third person; K also kickflips (just for show).
 [RequireComponent(typeof(Rigidbody), typeof(SphereCollider))]
@@ -47,24 +47,28 @@ public class SlideController : MonoBehaviour
     public float walkAccel = 40f;
     [Tooltip("How quickly you stop, or drop back to walking pace after stepping off the board.")]
     public float stopDecel = 14f;
+    [Tooltip("How quickly extra speed bleeds off after stepping off the board: low, so you skid out of it.")]
+    public float overspeedDecel = 7f;
 
     [Header("On the board (hold Shift)")]
     public float boardSpeed = 15f;
     [Tooltip("How quickly pushing gets you up to board speed.")]
-    public float boardAccel = 16f;
+    public float boardAccel = 11f;
     [Tooltip("With nothing else pressed, how quickly the board slows you.")]
-    public float boardRollDecel = 5f;
+    public float boardRollDecel = 1.5f;
     [Tooltip("Degrees per second you can turn on the board at pushing speed.")]
-    public float boardTurnRate = 600f;
+    public float boardTurnRate = 260f;
     [Tooltip("Degrees per second downhill speed turns when you're going faster than you can push.")]
-    public float fastTurnRate = 450f;
+    public float fastTurnRate = 200f;
     [Tooltip("How hard pressing against your direction (S) brakes on the board.")]
     public float boardBrake = 22f;
     [Tooltip("Gravity multiplier while on the board. A touch lighter than on foot; the board's jump is stronger to match.")]
     public float boardGravityScale = 3.4f;
     public float boardJumpSpeed = 8.6f;
     [Tooltip("Jump again in the air on the board for a kickflip; this is the extra pop it gives.")]
-    public float doubleJumpSpeed = 4.5f;
+    public float doubleJumpSpeed = 8f;
+    [Tooltip("Added on top when you double jump while still going up, so it always lifts you some.")]
+    public float doubleJumpBoost = 2f;
     [Tooltip("Overall speed cap, mostly reached going downhill on the board.")]
     public float maxSpeed = 22f;
 
@@ -116,7 +120,6 @@ public class SlideController : MonoBehaviour
     Vector3 groundNormal = Vector3.up;
     SlideInput input;
     bool jumpLatch;
-    bool skateMode;        // Q: on the board or on foot
     float jumpCooldown;
     bool airJumped;        // used the board's double jump (kickflip) this time in the air
     float fovNow;
@@ -187,9 +190,7 @@ public class SlideController : MonoBehaviour
 
         input.forward = (Input.GetKey(KeyCode.W) ? 1f : 0f) - (Input.GetKey(KeyCode.S) ? 1f : 0f);
         input.strafe = (Input.GetKey(KeyCode.D) ? 1f : 0f) - (Input.GetKey(KeyCode.A) ? 1f : 0f);
-        if (Input.GetKeyDown(KeyCode.Q)) skateMode = !skateMode;
-        input.push = skateMode;
-        input.kick = Input.GetKey(KeyCode.LeftShift) || Input.GetKey(KeyCode.RightShift);
+        input.push = input.kick = Input.GetKey(KeyCode.LeftShift) || Input.GetKey(KeyCode.RightShift);
         jumpLatch |= Input.GetKeyDown(KeyCode.Space);
     }
 
@@ -291,7 +292,7 @@ public class SlideController : MonoBehaviour
             {
                 // on foot: straight to walking pace, and any extra speed bleeds off quickly
                 if (wish.sqrMagnitude < 0.01f) vT = Vector3.MoveTowards(vT, Vector3.zero, stopDecel * dt);
-                else if (vT.magnitude > top) vT = Vector3.MoveTowards(vT, wish * top, stopDecel * dt);
+                else if (vT.magnitude > top) vT = Vector3.MoveTowards(vT, wish * top, overspeedDecel * dt);
                 else vT = Vector3.MoveTowards(vT, wish * top, walkAccel * dt);
             }
             else if (wish.sqrMagnitude < 0.01f)
@@ -342,9 +343,9 @@ public class SlideController : MonoBehaviour
         }
         else if (inp.jump && OnBoard && !airJumped)
         {
-            // jump again in the air on the board: a kickflip, with a little pop. It tops your upward speed up to
-            // doubleJumpSpeed rather than adding to it, so mashing Space on take-off can't launch you sky high
-            v.y = Mathf.Max(v.y, doubleJumpSpeed);
+            // jump again in the air on the board: a kickflip that lifts you again. Your upward speed goes to at least
+            // doubleJumpSpeed (a full second hop from the top of the jump), but mashing Space on take-off only adds a little
+            v.y = Mathf.Max(v.y + doubleJumpBoost, doubleJumpSpeed);
             airJumped = true;
             Kickflip();
         }
@@ -418,7 +419,7 @@ public class SlideController : MonoBehaviour
         Vector3 dir = (b - a).normalized;
         if (!inp.push || inp.jump)
         {
-            // step off with Q, or jump off with Space, keeping your speed along the rail
+            // let go of Shift to step off, or jump off with Space, keeping your speed along the rail
             Vector3 v = dir * grindSpeed;
             if (inp.jump) { v.y = Mathf.Max(v.y, 0f) + boardJumpSpeed; noLockTimer = 0.25f; }
             LeaveRail(v);

@@ -28,6 +28,7 @@ public static class SlideTests
             RampLock();
             RailLock();
             JumpFeel();
+            SolidEverywhere();
         }
         finally
         {
@@ -169,7 +170,7 @@ public static class SlideTests
     }
 
     // drop onto the plaza's flat rail on the board: it locks on and carries you along it to the end;
-    // Space jumps you off whenever you like, and Q steps you off
+    // Space jumps you off whenever you like, and so does letting go of Shift
     static void RailLock()
     {
         float y = SkateWorldBuilder.Base(700f) + 0.4f;
@@ -228,7 +229,7 @@ public static class SlideTests
 
         Report("board locks onto rails", rodeToEnd && jumpedOff && steppedOff && allAngles,
                (caughtAt >= 0f ? "locked on after " + caughtAt.ToString("F2") + "s and ground to x=" + lastX.ToString("F1") + " (rail ends at 700)" : "never locked on")
-               + "; Space " + (jumpedOff ? "jumps off" : "didn't jump off") + "; Q (off the board) " + (steppedOff ? "steps off" : "didn't step off") + ";" + angles);
+               + "; Space " + (jumpedOff ? "jumps off" : "didn't jump off") + "; letting go of Shift " + (steppedOff ? "steps off" : "didn't step off") + ";" + angles);
     }
 
     // on the board, Space again in the air is a kickflip with a little extra pop (once per jump);
@@ -254,6 +255,8 @@ public static class SlideTests
         float vyAfter = c.Velocity.y;
         Step(new SlideInput { push = true, jump = true });   // a third press does nothing
         bool onlyOnce = c.Velocity.y < vyAfter;
+        float dPeak = c.transform.position.y;
+        for (int i = 0; i < 80; i++) { Step(new SlideInput { push = true }); dPeak = Mathf.Max(dPeak, c.transform.position.y); }
 
         Place(PlazaSpot, new Vector3(21f, 0f, 0f));
         float before = new Vector3(c.Velocity.x, 0f, c.Velocity.z).magnitude;
@@ -263,8 +266,26 @@ public static class SlideTests
         bool ok = Mathf.Abs(mashed - single) < 0.6f * (single - y0) && flipped && onlyOnce && after > before - 0.5f;
         Report("double jump kickflip, no stacked jumps, no speed lost", ok,
                "board jump " + (single - y0).ToString("F2") + "m; mashing Space on take-off " + (mashed - y0).ToString("F2") + "m (includes the kickflip pop); "
-               + (flipped ? "Space in the air kickflips" : "no kickflip in the air") + (onlyOnce ? ", once" : ", MORE THAN ONCE")
+               + (flipped ? "Space in the air kickflips" : "no kickflip in the air") + (onlyOnce ? ", once" : ", MORE THAN ONCE") + ", double jump peaks at " + (dPeak - y0).ToString("F2") + "m"
                + "; jumping at " + (before * 3.6f).ToString("F0") + "km/h leaves you at " + (after * 3.6f).ToString("F0") + "km/h");
+    }
+    // the ground is solid past the edge of the skateable area too: ride out there and you don't drop
+    // out of the world
+    static void SolidEverywhere()
+    {
+        string log = "";
+        bool ok = true;
+        foreach (var at in new[] { new Vector2(1060f, 0f), new Vector2(400f, 220f), new Vector2(400f, -220f), new Vector2(-200f, 0f) })
+        {
+            float gy = SkateWorldBuilder.Height(at.x, at.y);
+            Place(new Vector3(at.x, gy + 1.5f, at.y), new Vector3(8f, 0f, 0f));
+            for (int i = 0; i < 150; i++) Step(new SlideInput { push = true, kick = true });
+            float y = c.transform.position.y - SkateWorldBuilder.Height(c.transform.position.x, c.transform.position.z);
+            bool held = y > -0.5f;
+            ok &= held;
+            log += " (" + at.x.ToString("F0") + "," + at.y.ToString("F0") + "): " + (held ? "on the ground" : "FELL " + y.ToString("F0") + "m") + ";";
+        }
+        Report("solid ground past the edges", ok, log);
     }
     // a modest hop, and you can still change direction mid-air
     static void JumpAndAirControl()

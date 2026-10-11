@@ -6,21 +6,20 @@ Open the project and play `Assets/Scenes/SkatePark.unity`. The ground is current
 
 ## Controls
 
-First person (press **V** for third person). You walk by default; **Q gets you on the board** (it appears under your feet) and off again. Gravity is much heavier than Unity's default, and heavier still on the way down, so jumps are quick and don't hang.
+First person (press **V** for third person). You walk by default; **hold Shift to ride the board** (it appears under your feet). The board carries momentum, so you glide, carve and drift rather than sprint; let go and you skid back to walking pace. Gravity is much heavier than Unity's default, and heavier still on the way down, so jumps are quick and don't hang.
 
 | Key | |
 |---|---|
 | **Mouse** | look |
-| **WASD** | walk (about 20 km/h, snappy); on the board, steer tightly (carves keep your speed), S brakes |
-| **Q** | get on / off the board |
-| **Shift** (hold, on the board) | push: builds to about 54 km/h; downhill speed is kept (capped about 79 km/h along the ground) |
-| **Space** | jump; on the board, **Space again in the air is a kickflip** with a little extra pop (once per jump); jumps you off a rail |
+| **WASD** | walk (about 20 km/h, snappy); on the board, steer (carves keep your speed), S brakes |
+| **Shift** (hold) | ride the board and push (Shift alone pushes you forward): builds to about 54 km/h; downhill speed is kept (capped about 79 km/h along the ground) |
+| **Space** | jump; on the board, **Space again in the air is a kickflip** that lifts you again (once per jump; about 2.1 m total from the top of a jump); jumps you off a rail |
 | **K** | kickflip (just the animation) |
 | **V** | switch between first and third person |
 | **R** | back to the start |
 | **Esc / click** | free / recapture the mouse |
 
-On the board you lock onto ramps, so you can ride up quarterpipe walls and over funboxes without flying off (kicker lips still launch you), and onto rails: get near one at about its height, from any angle (along it, across it, or dropping onto it), and you slide onto it and grind (come in from the side and it's a boardslide; come in along it and you ride it on your trucks; sparks either way) until you jump off (Space) or step off (Q).
+On the board you lock onto ramps, so you can ride up quarterpipe walls and over funboxes without flying off (kicker lips still launch you), and onto rails: get near one at about its height, from any angle (along it, across it, or dropping onto it), and you slide onto it and grind (come in from the side and it's a boardslide; come in along it and you ride it on your trucks; sparks either way) until you jump off (Space) or let go of Shift.
 Tuning lives on the Player object's `SlideController`, grouped into Third person, On foot, On the board, Ramp lock, Rail lock, Air and Kickflip. The board and skater are deliberately plain (flat colours, simple shapes, one accent colour, `BoardAccent` in the builder) so they fit whatever place you're skating through.
 
 The skateboard version (tricks, grinds, manuals, combos) is in git history at commit `7130f56`.
