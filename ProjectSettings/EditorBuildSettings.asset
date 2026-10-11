@@ -6,6 +6,9 @@ EditorBuildSettings:
   serializedVersion: 2
   m_Scenes:
   - enabled: 1
+    path: Assets/Scenes/SakuraCity.unity
+    guid: 3792182363c3be444a0b8231fd1398a7
+  - enabled: 1
     path: Assets/Scenes/PinkPalace.unity
     guid: 7c2cf7f90f6489b47a1cfd0e1054f599
   - enabled: 1

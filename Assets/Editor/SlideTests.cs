@@ -267,6 +267,7 @@ public static class SlideTests
         // big air: ride off something high
         Vector3 bp = c.board.position;
         c.ResetBoard();   // (just after hopping off you can't pick it straight back up; this clears that)
+        c.Respawn();      // (and forget how fast we were going, so the teleport below doesn't count as a crash)
         rb.position = bp + Vector3.up * 12f; c.transform.position = rb.position; rb.linearVelocity = Vector3.zero;
         Physics.SyncTransforms();
         c.board.position = bp + Vector3.up * 11.65f;
@@ -328,5 +329,131 @@ public static class SlideTests
               + "; single wall: rose only " + singleRise.ToString("F2") + "m"
               + "; spiral ramp: ran up to " + spiralTop.ToString("F1") + "m (top 14m)";
         return ok;
+    }
+// Sakura City: ride a bus roof; run up the parking garage to its roof; grind the power line from there
+    // up to the 22 m roof; wall-jump up the alley beside the tower; run up the station stairs; and land
+    // hard on the board and it shoots away from you
+    public static void RunCity()
+    {
+        c = Object.FindFirstObjectByType<SlideController>();
+        c.Setup();
+        var mode = Physics.simulationMode;
+        Physics.simulationMode = SimulationMode.Script;
+        Physics.SyncTransforms();
+        failures = 0;
+        var rb = c.GetComponent<Rigidbody>();
+        try
+        {
+            // a bus: stand on its roof and it carries you round
+            Mover bus = null;
+            foreach (var m in Object.FindObjectsByType<Mover>(FindObjectsSortMode.None)) { m.Init(); if (m.name == "Bus" && bus == null) bus = m; }
+            Physics.SyncTransforms();
+            Vector3 roof = bus.transform.position + Vector3.up * 3.6f;
+            Place(roof, Vector3.zero);
+            Vector3 from = c.transform.position;
+            float lowest = 99f;
+            for (int i = 0; i < 100; i++) { bus.Step(Dt); Physics.SyncTransforms(); Step(new SlideInput()); lowest = Mathf.Min(lowest, c.transform.position.y); }
+            float carried = Vector3.Distance(new Vector3(from.x, 0f, from.z), new Vector3(c.transform.position.x, 0f, c.transform.position.z));
+            bool busRide = lowest > 3f && carried > 10f;
+
+            // the garage: up the three ramps to the roof
+            var path = new[] { new Vector3(65f, 0f, 15f), new Vector3(87f, 5f, 15f), new Vector3(87f, 5f, 35f), new Vector3(65f, 10f, 35f),
+                               new Vector3(65f, 10f, 22f), new Vector3(65f, 10f, 15f), new Vector3(87f, 15f, 15f), new Vector3(86f, 15f, 24f) };
+            Place(new Vector3(62f, 0.6f, 15f), Vector3.zero);
+            int wp = 0; float garageTop = 0f;
+            for (int i = 0; i < 2500 && wp < path.Length; i++)
+            {
+                Vector3 to = path[wp] - c.transform.position; to.y = 0f;
+                if (to.magnitude < 1.2f) { wp++; continue; }
+                c.yaw = Mathf.Atan2(to.x, to.z) * Mathf.Rad2Deg;
+                Step(new SlideInput { forward = 1f });
+                garageTop = Mathf.Max(garageTop, c.transform.position.y);
+            }
+            bool garage = wp >= path.Length && c.transform.position.y > 15f;
+
+            // the power line from the garage roof up to the 22 m roof, on the board
+            var line = FindRail(new Vector3(67f, 16.5f, 35.5f));
+            Vector3 p0 = line.points[0], p1 = line.points[1];
+            c.ResetBoard();
+            Place(p0 + Vector3.up * 0.7f + (p1 - p0).normalized * 0.4f, Vector3.zero);
+            c.board.position = c.transform.position - Vector3.up * 0.35f;
+            Step(new SlideInput());
+            bool mounted = c.OnBoard;
+            Vector3 along = (p1 - p0); along.y = 0f; along.Normalize();
+            rb.linearVelocity = along * 7f;
+            bool grinding = false; float lineTop = 0f;
+            for (int i = 0; i < 400; i++)
+            {
+                Step(new SlideInput());
+                grinding |= c.Grinding;
+                lineTop = Mathf.Max(lineTop, c.transform.position.y);
+                if (!c.Grinding && grinding && c.Grounded) break;
+            }
+            Vector3 endUp = c.transform.position;
+            bool lineUp = mounted && grinding && endUp.y > 22f && endUp.x > 64f && endUp.z > 44f;
+            Step(new SlideInput { dismount = true });
+            c.ResetBoard();
+
+            // the alley between the tower and that building: wall-jump up it
+            Place(new Vector3(63f, 0.6f, 52f), Vector3.zero);
+            c.yaw = 0f;
+            float dir = -1f, alleyTop = 0f; int jumps = 0;
+            for (int i = 0; i < 900; i++)
+            {
+                bool jump = c.OnWall && !c.Grounded;
+                float before = c.Velocity.y;
+                Step(new SlideInput { strafe = dir, jump = jump || (i % 40 == 0 && c.Grounded), jumpHeld = true });
+                if (jump && c.Velocity.y > before + 3f) { jumps++; dir = -dir; }
+                alleyTop = Mathf.Max(alleyTop, c.transform.position.y);
+            }
+            bool alley = alleyTop > 22.6f;
+
+            // the station stairs, from the boulevard up to the platform
+            Place(new Vector3(60f, 0.6f, 10.5f), Vector3.zero);
+            c.yaw = -90f;
+            float stairTop = 0f;
+            for (int i = 0; i < 300; i++) { Step(new SlideInput { forward = 1f }); stairTop = Mathf.Max(stairTop, c.transform.position.y); }
+            bool stairs = stairTop > 10.2f;
+
+            // a hard landing on the board: it shoots out from under you
+            c.ResetBoard();
+            Place(new Vector3(-40f, 0.6f, -8f), Vector3.zero);
+            c.board.position = c.transform.position - Vector3.up * 0.35f;
+            Step(new SlideInput());
+            bool onIt = c.OnBoard;
+            rb.position = c.transform.position + Vector3.up * 8f; c.transform.position = rb.position;
+            rb.linearVelocity = new Vector3(8f, 0f, 0f);
+            Physics.SyncTransforms();
+            for (int i = 0; i < 80 && c.OnBoard; i++) Step(new SlideInput { forward = 1f });
+            bool bailed = onIt && !c.OnBoard && c.Bailed;
+            for (int i = 0; i < 25; i++) Step(new SlideInput());
+            float apart = Vector3.Distance(c.board.position, c.transform.position);
+            c.ResetBoard();
+
+            Report("city: bus, garage, power line, alley, stairs, bail", busRide && garage && lineUp && alley && stairs && bailed && apart > 2f,
+                   "bus roof: carried " + carried.ToString("F0") + "m, lowest " + lowest.ToString("F1") + "m"
+                   + "; garage: " + (garage ? "ran up to the roof (" + garageTop.ToString("F1") + "m)" : "STUCK at waypoint " + wp + " (" + garageTop.ToString("F1") + "m)")
+                   + "; power line: " + (lineUp ? "ground up it to the 22m roof" : "FAILED (mounted " + mounted + ", grinding " + grinding + ", ended at " + endUp.ToString("F1") + ")")
+                   + "; alley: " + jumps + " wall jumps, up to " + alleyTop.ToString("F1") + "m"
+                   + "; stairs: up to " + stairTop.ToString("F1") + "m"
+                   + "; 8m drop on the board: " + (bailed ? "bailed, board slid " + apart.ToString("F1") + "m away" : "NO BAIL"));
+        }
+        finally
+        {
+            Physics.simulationMode = mode;
+            c.Respawn();
+        }
+        Debug.Log("SLIDE_TESTS_DONE city failures=" + failures);
+    }
+
+    static SkateRail FindRail(Vector3 near)
+    {
+        SkateRail best = null; float bd = float.MaxValue;
+        foreach (var r in Object.FindObjectsByType<SkateRail>(FindObjectsSortMode.None))
+        {
+            float d = Vector3.Distance(r.points[0], near);
+            if (d < bd) { bd = d; best = r; }
+        }
+        return best;
     }
 }

@@ -117,6 +117,23 @@ public class SlideController : MonoBehaviour
     public float bigAirFallSpeed = 26f;
     public float flipTime = 0.45f;
     public float flipHop = 0.4f;
+    [Tooltip("Land falling faster than this and the board shoots out from under you.")]
+    public float bailFallSpeed = 16f;
+    [Tooltip("Lose this much speed in one go (hitting a wall) and you bail.")]
+    public float bailImpact = 7f;
+    [Tooltip("Land facing this many degrees away from the way you took off and you bail.")]
+    public float bailTwist = 70f;
+    [Tooltip("After a bail you're down for this long.")]
+    public float bailStun = 0.7f;
+
+    [Header("Rails (on the board)")]
+    [Tooltip("How close (sideways) to a rail you need to be for the board to lock onto it.")]
+    public float railCatch = 0.5f;
+    [Tooltip("How far above riding height on a rail you can be and still snap down onto it.")]
+    public float railCatchAbove = 0.6f;
+    [Tooltip("Slowest you grind at; you always get carried along the rail at least this fast, even uphill.")]
+    public float grindMinSpeed = 5f;
+    public float grindFriction = 0.6f;
 
     public float yaw, pitch;
     public bool Grounded { get; private set; }
@@ -124,6 +141,9 @@ public class SlideController : MonoBehaviour
     public bool Sliding { get { return sliding; } }
     public bool OnWall { get { return touchingWall; } }
     public bool Flipping { get { return flip >= 0f; } }
+    public bool Grinding { get { return grindRail != null; } }
+    public bool Bailed { get { return stunTimer > 0f; } }
+    public string TrickName { get { return grindRail != null ? GrindStyles[grindStyle].name : null; } }
     public Vector3 Velocity { get { return rb.linearVelocity; } }
     public float Speed { get { return rb.linearVelocity.magnitude; } }
 
@@ -158,6 +178,18 @@ public class SlideController : MonoBehaviour
     float takeoffY;
     bool flippedThisAir;
     float flip = -1f;      // kickflip progress 0..1, or <0 when not flipping
+    Vector3 boardVel;      // the board sliding off on its own after a bail
+    float boardSpin;
+    float stunTimer;       // down after a bail
+    Vector3 takeoffDir;    // which way you were going when you left the ground
+    float lastFlatSpeed, lastFallSpeed;
+    bool wasGrounded;
+
+    SkateRail[] rails;
+    SkateRail grindRail;   // the rail you're grinding, if any
+    int grindSeg, grindStyle = 4;
+    float grindU, grindSpeed, noRailTimer, lastStrafe;
+    Vector3 visualOffset;  // eases the camera, board and runner over when the body snaps onto a rail
 
     void Awake() { Setup(); }
 
@@ -168,6 +200,7 @@ public class SlideController : MonoBehaviour
         if (cam != null) camera3d = cam.GetComponent<Camera>();
         if (rider != null) { body = rider.Find("Body"); legL = rider.Find("Leg L"); legR = rider.Find("Leg R"); }
         if (board != null && boardHome == Vector3.zero) { boardHome = board.position; boardHomeRot = board.rotation; }
+        rails = Object.FindObjectsByType<SkateRail>(FindObjectsSortMode.None);
     }
 
     void Start()
@@ -191,6 +224,10 @@ public class SlideController : MonoBehaviour
         slideJumpTimer = steerDelay = 0f;
         lastWallJump = Vector3.zero;
         flip = -1f;
+        grindRail = null;
+        stunTimer = noRailTimer = lastFlatSpeed = lastFallSpeed = 0f;
+        wasGrounded = false;
+        visualOffset = Vector3.zero;
         Vector3 f = s.forward;
         yaw = Mathf.Atan2(f.x, f.z) * Mathf.Rad2Deg;
         pitch = 8f;
@@ -202,6 +239,7 @@ public class SlideController : MonoBehaviour
         OnBoard = false;
         if (board == null) return;
         board.SetPositionAndRotation(boardHome, boardHomeRot);
+        boardVel = Vector3.zero;
         pickupBlock = 0f;
     }
 
@@ -221,7 +259,7 @@ public class SlideController : MonoBehaviour
         input.strafe = (Input.GetKey(KeyCode.D) ? 1f : 0f) - (Input.GetKey(KeyCode.A) ? 1f : 0f);
         input.sprint = Input.GetKey(KeyCode.LeftShift) || Input.GetKey(KeyCode.RightShift);
         jumpLatch |= Input.GetKeyDown(KeyCode.Space);
-        dismountLatch |= Input.GetKeyDown(KeyCode.Q);
+        dismountLatch |= Input.GetKeyDown(KeyCode.Q) || (Cursor.lockState == CursorLockMode.Locked && Input.GetMouseButtonDown(1));   // Q or right click: hop off the board
         input.jumpHeld = Input.GetKey(KeyCode.Space);
         input.slide = Input.GetKey(KeyCode.C);
     }
@@ -242,6 +280,14 @@ public class SlideController : MonoBehaviour
         float dt = Time.fixedDeltaTime;
         jumpCooldown -= dt;
         steerDelay -= dt;
+        stunTimer -= dt;
+        noRailTimer -= dt;
+        SlideFreeBoard(dt);
+
+        if (grindRail != null)
+        {
+            if (Grind(inp, dt)) return;
+        }
 
         RaycastHit hit;
         Grounded = Physics.SphereCast(rb.position + Vector3.up * CastBack, ball.radius * 0.95f, Vector3.down, out hit, 0.12f + CastBack, ~0, QueryTriggerInteraction.Ignore)
@@ -258,7 +304,25 @@ public class SlideController : MonoBehaviour
         }
         if (Grounded) lastWallJump = Vector3.zero;
 
+        // standing on something moving (a bus, a car, the train): you move with it
+        Mover ride = Grounded && hit.collider != null && hit.collider.attachedRigidbody != null ? hit.collider.attachedRigidbody.GetComponent<Mover>() : null;
+        Vector3 platV = ride != null ? ride.Velocity : Vector3.zero;
+        platV.y = 0f;
+
         UpdateBoard(inp, dt);
+
+        // the board's easy to lose: land hard, land facing a different way from how you took off, or hit
+        // something, and it shoots out from under you
+        Vector3 nowV = rb.linearVelocity;
+        Vector3 nowFlat = new Vector3(nowV.x, 0f, nowV.z) - platV;
+        if (OnBoard)
+        {
+            bool landed = Grounded && !wasGrounded;
+            if (landed && lastFallSpeed > bailFallSpeed) Bail("Bail! (hard landing)");
+            else if (landed && nowFlat.magnitude > 5f && takeoffDir != Vector3.zero && Vector3.Angle(takeoffDir, nowFlat) > bailTwist) Bail("Bail! (landed sideways)");
+            else if ((Grounded || wasGrounded) && lastFlatSpeed - new Vector3(nowV.x, 0f, nowV.z).magnitude > bailImpact) Bail("Bail! (hit something)");
+        }
+        if (Grounded) takeoffDir = nowFlat.magnitude > 2f ? nowFlat.normalized : Vector3.zero;
 
         Quaternion look = Quaternion.Euler(0f, yaw, 0f);
         Vector3 fwd = look * Vector3.forward, right = look * Vector3.right;
@@ -269,6 +333,7 @@ public class SlideController : MonoBehaviour
         }
         Vector3 wish = fwd * inp.forward + right * inp.strafe;
         if (wish.sqrMagnitude > 1f) wish.Normalize();
+        if (stunTimer > 0f) wish = Vector3.zero;   // down after a bail
         float top = OnBoard ? (inp.sprint ? boardSprintSpeed : boardSpeed) : (inp.sprint ? sprintSpeed : walkSpeed);
 
         Vector3 v = rb.linearVelocity;
@@ -289,7 +354,7 @@ public class SlideController : MonoBehaviour
         {
             // work in the plane of the ground; the part into/out of it is left to physics
             Vector3 vN = Vector3.Project(v, groundNormal);
-            Vector3 vT = v - vN;
+            Vector3 vT = v - vN - platV;   // (relative to whatever you're standing on)
             if (sliding)
             {
                 if (!wasSliding && vT.magnitude > 0.1f)
@@ -300,7 +365,7 @@ public class SlideController : MonoBehaviour
             }
             else if (OnBoard) vT = BoardGround(vT, wish, top, inp, dt);
             else vT = RunGround(vT, wish, top, dt);
-            v = vT + vN;
+            v = vT + vN + platV;
         }
         else
         {
@@ -326,7 +391,7 @@ public class SlideController : MonoBehaviour
         // off an edge you can still jump. In the air against a wall it's a wall jump instead
         if (inp.jump) jumpBuffer = jumpBufferTime; else jumpBuffer -= dt;
         if (Grounded) sinceGrounded = 0f; else sinceGrounded += dt;
-        bool canJump = (Grounded || sinceGrounded < coyoteTime) && jumpCooldown <= 0f;
+        bool canJump = (Grounded || sinceGrounded < coyoteTime) && jumpCooldown <= 0f && stunTimer <= 0f;
         bool canWallJump = !canJump && touchingWall && jumpCooldown <= 0f
                            && (lastWallJump == Vector3.zero || Vector3.Dot(wallNormal, lastWallJump) < 0.5f);   // not the same wall twice running
         if (jumpBuffer > 0f && canJump)
@@ -377,6 +442,13 @@ public class SlideController : MonoBehaviour
             flat = flat.normalized * maxSpeed;
             rb.linearVelocity = new Vector3(flat.x, v.y, flat.z);
         }
+
+        wasGrounded = Grounded;
+        lastFallSpeed = Grounded ? 0f : Mathf.Max(0f, -rb.linearVelocity.y);
+        Vector3 endV = rb.linearVelocity;
+        lastFlatSpeed = new Vector3(endV.x, 0f, endV.z).magnitude;
+        lastStrafe = inp.strafe;
+        if (OnBoard && noRailTimer <= 0f && !Grounded) TryLockOntoRail();
 
         // really big air on the board, and only that: the board kickflips
         if (Grounded) { takeoffY = rb.position.y; flippedThisAir = false; }
@@ -444,12 +516,175 @@ public class SlideController : MonoBehaviour
         else if (!OnBoard && pickupBlock <= 0f && Vector3.Distance(feet, board.position) < pickupRadius && Mathf.Abs(feet.y - board.position.y) < 0.6f)
         {
             OnBoard = true;
+            boardVel = Vector3.zero;
             boardRot = board.rotation;
             sliding = false;
         }
         if (!OnBoard && pickupBlock > 0f && Vector3.Distance(feet, board.position) < pickupRadius) pickupBlock = 0.3f;   // move away first
     }
 
+    // ---- bails and the loose board ------------------------------------------------------------
+
+    // the board shoots out from under you and slides away; you go down for a moment
+    void Bail(string why)
+    {
+        if (!OnBoard || board == null) return;
+        OnBoard = false;
+        Vector3 v = rb.linearVelocity;
+        Vector3 flat = new Vector3(v.x, 0f, v.z);
+        Vector3 side = Vector3.Cross(Vector3.up, flat.sqrMagnitude > 0.01f ? flat.normalized : boardRot * Vector3.forward);
+        boardVel = flat * 1.1f + side * Random.Range(-2.5f, 2.5f);
+        boardSpin = Random.Range(-400f, 400f);
+        board.position = rb.position - Vector3.up * ball.radius;
+        rb.linearVelocity = new Vector3(v.x * 0.3f, Mathf.Max(v.y, 0f), v.z * 0.3f);
+        stunTimer = bailStun;
+        pickupBlock = 0.8f;
+        flip = -1f;
+        SlideHUD.Flash(why);
+    }
+
+    // a loose board rolls on along the ground, slowing, spinning, bouncing off walls and dropping off edges
+    void SlideFreeBoard(float dt)
+    {
+        if (board == null || OnBoard || boardVel.sqrMagnitude < 0.0004f) return;
+        Vector3 p = board.position;
+        Vector3 flat = new Vector3(boardVel.x, 0f, boardVel.z);
+        RaycastHit h;
+        if (flat.sqrMagnitude > 0.01f && Physics.Raycast(p + Vector3.up * 0.15f, flat.normalized, out h, flat.magnitude * dt + 0.3f, ~0, QueryTriggerInteraction.Ignore))
+        {
+            flat = Vector3.Reflect(flat, new Vector3(h.normal.x, 0f, h.normal.z).normalized) * 0.4f;   // bounce off
+            boardSpin = -boardSpin * 0.5f;
+        }
+        p += flat * dt;
+        bool onGround = Physics.Raycast(p + Vector3.up * 0.6f, Vector3.down, out h, 0.6f + Mathf.Max(0.05f, -boardVel.y * dt) + 0.02f, ~0, QueryTriggerInteraction.Ignore);
+        float vy = boardVel.y;
+        if (onGround && vy <= 0f) { p.y = h.point.y; vy = 0f; flat = Vector3.MoveTowards(flat, Vector3.zero, 3f * dt); }
+        else { vy += Physics.gravity.y * gravityScale * dt; p.y += vy * dt; }
+        boardVel = new Vector3(flat.x, vy, flat.z);
+        boardSpin = Mathf.MoveTowards(boardSpin, 0f, 300f * dt);
+        board.SetPositionAndRotation(p, Quaternion.Euler(0f, boardSpin * dt, 0f) * board.rotation);
+        if (flat.sqrMagnitude < 0.0004f && onGround) boardVel = Vector3.zero;
+    }
+
+    // ---- rails --------------------------------------------------------------------------------
+
+    float RideHeight(SkateRail r) { return r.radius + ball.radius; }
+
+    // on the board, in the air, near a rail at about its height: snap onto it and grind. Any angle works;
+    // your speed carries over, and you go whichever way along the rail is closer to where you're heading
+    void TryLockOntoRail()
+    {
+        if (rails == null) return;
+        Vector3 p = rb.position, v = rb.linearVelocity;
+        if (v.y > 6f || new Vector3(v.x, 0f, v.z).magnitude < 1.5f) return;
+        SkateRail best = null; int bestSeg = 0; float bestU = 0f, bestD = float.MaxValue;
+        foreach (var r in rails)
+        {
+            if (r == null || r.points == null || r.points.Length < 2) continue;
+            int seg; float u;
+            Vector3 q = r.Closest(p, out seg, out u);
+            Vector3 dir = (r.points[seg + 1] - r.points[seg]).normalized;
+            Vector3 off = p - q;
+            if (Mathf.Abs(Vector3.Dot(off, dir)) > 0.05f) continue;              // past the end of the rail
+            Vector3 side = off - dir * Vector3.Dot(off, dir);
+            float above = side.y - RideHeight(r);
+            side.y = 0f;
+            if (side.magnitude > railCatch || above < -0.3f || above > railCatchAbove) continue;
+            float d = side.sqrMagnitude + above * above;
+            if (d < bestD) { bestD = d; best = r; bestSeg = seg; bestU = u; }
+        }
+        if (best == null) return;
+
+        Vector3 rd = (best.points[bestSeg + 1] - best.points[bestSeg]).normalized;
+        Vector3 flatV = new Vector3(v.x, 0f, v.z);
+        Vector3 heading = flatV.magnitude > 1f ? flatV : Quaternion.Euler(0f, yaw, 0f) * Vector3.forward;
+        float sign = Vector3.Dot(heading, rd) >= 0f ? 1f : -1f;
+        float speed = Mathf.Max(Mathf.Abs(Vector3.Dot(v, rd)), flatV.magnitude * 0.8f, grindMinSpeed);
+        grindRail = best; grindSeg = bestSeg; grindU = bestU;
+        Vector3 onRail = Vector3.Lerp(best.points[bestSeg], best.points[bestSeg + 1], bestU) + Vector3.up * RideHeight(best);
+        visualOffset += p - onRail;   // the body snaps on, what you see slides over
+        // the grind depends on the angle you come in at, and which side
+        Vector3 railFlat = new Vector3(rd.x, 0f, rd.z).normalized * sign;
+        float a = Vector3.SignedAngle(railFlat, new Vector3(heading.x, 0f, heading.z), Vector3.up);
+        float abs = Mathf.Abs(a);
+        string pick = abs < 12f ? (pitch > 25f ? "Nosegrind" : pitch < -10f ? "5-0" : "50-50")
+                    : abs < 35f ? (a > 0f ? "Crooked" : "Feeble")
+                    : abs < 62f ? (a > 0f ? "Noseslide" : "Tailslide")
+                    : (a > 0f ? "Boardslide" : "Lipslide");
+        grindStyle = System.Array.FindIndex(GrindStyles, s => s.name == pick);
+        grindSpeed = sign * speed;
+    }
+
+    public struct GrindStyleDef { public string name; public float yaw, pitch, roll; }
+    // in order round the ring A/D steps through while you're grinding
+    public static readonly GrindStyleDef[] GrindStyles =
+    {
+        new GrindStyleDef { name = "Lipslide",   yaw = -90f, pitch =  0f, roll = -6f },
+        new GrindStyleDef { name = "Tailslide",  yaw = -68f, pitch = -12f, roll = 0f },
+        new GrindStyleDef { name = "Feeble",     yaw = -18f, pitch = -7f, roll = 8f },
+        new GrindStyleDef { name = "5-0",        yaw =   0f, pitch = -11f, roll = 0f },
+        new GrindStyleDef { name = "50-50",      yaw =   0f, pitch =  0f, roll = 0f },
+        new GrindStyleDef { name = "Nosegrind",  yaw =   0f, pitch = 11f, roll = 0f },
+        new GrindStyleDef { name = "Crooked",    yaw =  18f, pitch =  8f, roll = -8f },
+        new GrindStyleDef { name = "Noseslide",  yaw =  68f, pitch = 12f, roll = 0f },
+        new GrindStyleDef { name = "Boardslide", yaw =  90f, pitch =  0f, roll = 6f },
+    };
+
+    // one step along the rail; false when you've come off it and the rest of the step should run
+    bool Grind(SlideInput inp, float dt)
+    {
+        int stepStyle = inp.strafe > 0.5f && lastStrafe <= 0.5f ? 1 : inp.strafe < -0.5f && lastStrafe >= -0.5f ? -1 : 0;
+        lastStrafe = inp.strafe;
+        if (stepStyle != 0) grindStyle = Mathf.Clamp(grindStyle + stepStyle, 0, GrindStyles.Length - 1);
+
+        Vector3[] pts = grindRail.points;
+        Vector3 dir = (pts[grindSeg + 1] - pts[grindSeg]).normalized;
+        if (inp.jump || inp.dismount || !OnBoard)
+        {
+            // jump off (Space), or hop off the board altogether (right click / Q), keeping your speed along the rail
+            Vector3 v = dir * grindSpeed;
+            if (inp.jump) { v.y = Mathf.Max(v.y, 0f) + jumpSpeed; StartJump(); }
+            LeaveRail(v);
+            return inp.jump;
+        }
+
+        // gravity pulls you down sloped rails (and up them you're carried at least grindMinSpeed); a little friction
+        grindSpeed -= Physics.gravity.magnitude * gravityScale * 0.5f * dir.y * dt;
+        float s = Mathf.Max(grindMinSpeed, Mathf.Abs(grindSpeed) - grindFriction * dt);
+        grindSpeed = Mathf.Sign(grindSpeed) * Mathf.Min(s, maxSpeed);
+
+        float len = Vector3.Distance(pts[grindSeg], pts[grindSeg + 1]);
+        grindU += grindSpeed * dt / Mathf.Max(len, 0.01f);
+        while (grindU > 1f || grindU < 0f)
+        {
+            bool fwd = grindU > 1f;
+            int next = grindSeg + (fwd ? 1 : -1);
+            if (next < 0 || next >= pts.Length - 1) { LeaveRail(dir * grindSpeed); return true; }   // off the end: fly on
+            float over = (fwd ? grindU - 1f : -grindU) * len;
+            grindSeg = next;
+            len = Vector3.Distance(pts[grindSeg], pts[grindSeg + 1]);
+            grindU = fwd ? over / len : 1f - over / len;
+            dir = (pts[grindSeg + 1] - pts[grindSeg]).normalized;
+        }
+
+        Vector3 on = Vector3.Lerp(pts[grindSeg], pts[grindSeg + 1], grindU) + Vector3.up * RideHeight(grindRail);
+        rb.position = on;
+        transform.position = on;
+        rb.linearVelocity = dir * grindSpeed - Physics.gravity * dt;   // cancel the physics step's gravity
+        Grounded = false;
+        wasGrounded = false;
+        lastFallSpeed = 0f;
+        takeoffDir = new Vector3(dir.x, 0f, dir.z).normalized * Mathf.Sign(grindSpeed);
+        return true;
+    }
+
+    void LeaveRail(Vector3 v)
+    {
+        grindRail = null;
+        noRailTimer = 0.35f;
+        rb.linearVelocity = v;
+        lastFlatSpeed = new Vector3(v.x, 0f, v.z).magnitude;
+    }
     // a wall touching you, if any (checked all the way round)
     bool FindWall(out Vector3 normal)
     {
@@ -472,11 +707,12 @@ public class SlideController : MonoBehaviour
     void LateUpdate()
     {
         float dt = Time.deltaTime;
+        visualOffset = Vector3.Lerp(visualOffset, Vector3.zero, 1f - Mathf.Exp(-16f * dt));
         if (cam != null)
         {
             Quaternion view = Quaternion.Euler(pitch, yaw, 0f);
-            eyeDrop = Mathf.Lerp(eyeDrop, sliding ? 0.65f : 0f, 1f - Mathf.Exp(-12f * dt));
-            Vector3 eye = transform.position + Vector3.up * (eyeHeight - ball.radius - eyeDrop + (OnBoard ? 0.2f : 0f));
+            eyeDrop = Mathf.Lerp(eyeDrop, Bailed ? 0.9f : sliding ? 0.65f : 0f, 1f - Mathf.Exp(-12f * dt));
+            Vector3 eye = transform.position + visualOffset + Vector3.up * (eyeHeight - ball.radius - eyeDrop + (OnBoard ? 0.2f : 0f));
             if (thirdPerson)
             {
                 // orbit behind you, pulled in if something's in the way
@@ -499,7 +735,7 @@ public class SlideController : MonoBehaviour
         }
 
         Vector3 up = Grounded ? groundNormal : Vector3.up;
-        Vector3 feet = transform.position - up * ball.radius;
+        Vector3 feet = transform.position + visualOffset - up * ball.radius;
 
         // the board, while you're riding it: under your feet, facing where you're going, tilted with
         // the ground, and spinning once round its length if you've kickflipped
@@ -515,7 +751,18 @@ public class SlideController : MonoBehaviour
             Vector3 heading = Vector3.ProjectOnPlane(rb.linearVelocity, up);
             if (heading.magnitude < 1f) heading = Vector3.ProjectOnPlane(Quaternion.Euler(0f, yaw, 0f) * Vector3.forward, up);
             if (heading.sqrMagnitude < 0.01f) heading = Vector3.ProjectOnPlane(boardRot * Vector3.forward, up);
-            boardRot = Quaternion.Slerp(boardRot, Quaternion.LookRotation(heading, up), 1f - Mathf.Exp(-14f * dt));
+            Quaternion want = Quaternion.LookRotation(heading, up);
+            float turnIn = 14f;
+            if (grindRail != null)
+            {
+                // on a rail, sitting on it the way the grind says
+                Vector3[] pts = grindRail.points;
+                Vector3 along = (pts[grindSeg + 1] - pts[grindSeg]).normalized * Mathf.Sign(grindSpeed);
+                var gs = GrindStyles[grindStyle];
+                want = Quaternion.LookRotation(along, Vector3.up) * Quaternion.Euler(gs.pitch, gs.yaw, gs.roll);
+                turnIn = 30f;
+            }
+            boardRot = Quaternion.Slerp(boardRot, want, 1f - Mathf.Exp(-turnIn * dt));
             Quaternion r = boardRot * Quaternion.AngleAxis(spin, Vector3.forward);
             Vector3 mid = Vector3.up * 0.16f;   // spin round the middle of the deck rather than the wheels
             board.SetPositionAndRotation(feet + up * pop + boardRot * mid - r * mid, r);

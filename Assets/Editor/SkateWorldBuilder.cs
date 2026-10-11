@@ -230,6 +230,9 @@ public static partial class SkateWorldBuilder
             BuildPalace();
             SlideTests.RunPalace();
             PalaceShots();
+            BuildCity();
+            SlideTests.RunCity();
+            CityShots();
         }
         catch (System.Exception e)
         {
@@ -582,6 +585,9 @@ public static partial class SkateWorldBuilder
         go.transform.position = Vector3.zero;
         go.GetComponent<MeshFilter>().sharedMesh = mesh;
         go.GetComponent<MeshRenderer>().sharedMaterials = new[] { toonMat, outlineMat };
+        var rail = root.gameObject.AddComponent<SkateRail>();   // grindable on the board
+        rail.points = pts;
+        rail.radius = 0.05f;
         foreach (var p in pts) keepClear.Add(new Vector3(p.x, p.z, 6f));
     }
 

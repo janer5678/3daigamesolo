@@ -123,10 +123,11 @@ public static partial class SkateWorldBuilder
         Debug.Log("SKATE_PALACE_BUILT features=" + featureCount);
     }
 
-    // the pink palace opens first; Tab goes on to the valley
+    // the city opens first; Tab goes on to the pink palace, then the valley
     static void SetBuildScenes()
     {
         var list = new List<EditorBuildSettingsScene>();
+        if (File.Exists(CityPath)) list.Add(new EditorBuildSettingsScene(CityPath, true));
         if (File.Exists(PalacePath)) list.Add(new EditorBuildSettingsScene(PalacePath, true));
         if (File.Exists(ScenePath)) list.Add(new EditorBuildSettingsScene(ScenePath, true));
         EditorBuildSettings.scenes = list.ToArray();
