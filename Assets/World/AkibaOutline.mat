@@ -25,10 +25,10 @@ Material:
     m_TexEnvs: []
     m_Ints: []
     m_Floats:
-    - _FogDensity: 0.004
+    - _FogDensity: 0.003
     - _FogHeight: 900
     - _FogMax: 0.95
-    - _OutlineWidth: 1.1
+    - _OutlineWidth: 1
     m_Colors:
     - _Haze: {r: 0.16, g: 0.08, b: 0.24, a: 1}
     - _HazeHigh: {r: 0.12, g: 0.06, b: 0.2, a: 1}

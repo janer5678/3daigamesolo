@@ -24,7 +24,7 @@ Material:
     serializedVersion: 3
     m_TexEnvs:
     - _MainTex:
-        m_Texture: {fileID: 2800000, guid: 209f9fb03dc850f46a471d339de1c62e, type: 3}
+        m_Texture: {fileID: 2800000, guid: 4a1a6c3340076914a8ba6252e89720eb, type: 3}
         m_Scale: {x: 1, y: 1}
         m_Offset: {x: 0, y: 0}
     m_Ints: []
@@ -33,7 +33,7 @@ Material:
     - _Emission: 1
     m_Colors:
     - _Color: {r: 1, g: 1, b: 1, a: 1}
-    - _Flicker: {r: 1.1992666, g: 0.7737558, b: 0.17845474, a: 0}
+    - _Flicker: {r: 1.2138177, g: 0.8094871, b: 0.32977045, a: 0}
     - _Scroll: {r: 0, g: 0, b: 0, a: 0}
   m_BuildTextureStacks: []
   m_AllowLocking: 1

@@ -12,16 +12,13 @@ public struct SlideInput
     public bool dismount;   // Q, pressed: hop off the board
 }
 
-// The parkour runner. Tight control: you get up to speed, stop and turn almost at once, on the ground
-// and in the air. Shift sprints. Space jumps (hold it to go higher), with coyote time and jump
-// buffering; hopping again and again in the same direction slowly builds speed. In the air against a
-// wall, Space wall jumps off it (bouncing between walls climbs a shaft, but you can't climb one wall on
-// its own), and pressing into a wall while falling slides you down it slowly. C slides, with a higher
-// jump out of it.
-// You always have your skateboard: you start on it and stay on it, however you land. Right click steps
-// off (carrying it) and back on. Really big air on the board, and only that, kickflips it.
-// V switches first and third person.
-[RequireComponent(typeof(Rigidbody), typeof(SphereCollider))]
+// You and your skateboard. On foot: tight control, Shift sprints, Space jumps (hold it to go higher) with
+// coyote time and jump buffering, C slides (and you fit under low things). The board's always with you
+// (right click steps off, carrying it, and back on): cruise, or hold Shift to go faster; kickers launch
+// you; jump onto rails to grind them (Shift: power grind; the curvy ones grab you from a couple of metres
+// and rush you along); C is a powerslide that comes out with a boost. Ride up the ramp on the back of a
+// flying car and you fly it. Really big air, and only that, sometimes kickflips the board.
+// V switches first and third person.[RequireComponent(typeof(Rigidbody), typeof(SphereCollider))]
 public class SlideController : MonoBehaviour
 {
     public Transform cam;
@@ -50,9 +47,9 @@ public class SlideController : MonoBehaviour
     public float camPivotHeight = 1.6f;
 
     [Header("Running")]
-    public float walkSpeed = 6.5f;
+    public float walkSpeed = 4.5f;
     [Tooltip("Holding Shift.")]
-    public float sprintSpeed = 11f;
+    public float sprintSpeed = 7.5f;
     [Tooltip("How quickly you get to the speed you're asking for, or turn. High = instant.")]
     public float runAccel = 90f;
     [Tooltip("How quickly you stop when you let go.")]
@@ -60,7 +57,7 @@ public class SlideController : MonoBehaviour
     [Tooltip("Speed over running pace from hopping bleeds off this slowly while you keep going the same way.")]
     public float overspeedDecel = 8f;
     [Tooltip("Overall speed cap along the ground.")]
-    public float maxSpeed = 36f;
+    public float maxSpeed = 24f;
 
     [Header("Jumping")]
     public float jumpSpeed = 8.4f;
@@ -75,22 +72,11 @@ public class SlideController : MonoBehaviour
     [Tooltip("Speed each hop adds, so hopping again and again slowly speeds you up...")]
     public float hopBoost = 0.8f;
     [Tooltip("...up to this.")]
-    public float hopSpeedCap = 20f;
+    public float hopSpeedCap = 12f;
 
-    [Header("Wall jump")]
-    public float wallJumpUp = 9.5f;
-    public float wallJumpOut = 7f;
-    [Tooltip("After a wall jump, steering is weaker for this long so you actually leave the wall.")]
-    public float wallJumpSteerDelay = 0.18f;
     [Tooltip("Pressing into a wall while falling: you slide down it no faster than this.")]
     public float wallSlideSpeed = 3f;
 
-    [Header("Wall run")]
-    [Tooltip("In the air, moving along a wall at least this fast, you run (or ride) along it.")]
-    public float wallRunMinSpeed = 7f;
-    [Tooltip("How much of gravity's held off while wall running.")]
-    public float wallRunHold = 0.88f;
-    public float wallRunMaxFall = 2.5f;
     [Tooltip("The body above the ball: switched off while you slide, so you fit under low things.")]
     public Collider torso;
 
@@ -114,9 +100,9 @@ public class SlideController : MonoBehaviour
 
     [Header("Skateboard")]
     [Tooltip("On the board without Shift: a cruise; faster than this and you ease back down to it.")]
-    public float boardSpeed = 12f;
+    public float boardSpeed = 7f;
     [Tooltip("Holding Shift on the board: flat out.")]
-    public float boardSprintSpeed = 30f;
+    public float boardSprintSpeed = 14f;
     public float boardAccel = 16f;
     [Tooltip("Let go of Shift and you ease back to cruising speed this quickly.")]
     public float boardCoastDecel = 5f;
@@ -151,7 +137,7 @@ public class SlideController : MonoBehaviour
     public bool OnBoard { get; private set; }
     public bool Sliding { get { return sliding; } }
     public bool OnWall { get { return touchingWall; } }
-    public bool WallRunning { get { return wallRunning; } }
+    public bool Piloting { get { return piloting != null; } }
     public bool Flipping { get { return flip >= 0f; } }
     public bool Grinding { get { return grindRail != null; } }
     public string TrickName { get { return grindRail != null ? GrindStyles[grindStyle].name : null; } }
@@ -173,14 +159,15 @@ public class SlideController : MonoBehaviour
     float jumpBuffer;
     bool sliding;
     float slideJumpTimer;
-    bool touchingWall, wallRunning;
-    float slideTime, camRoll;
+    bool touchingWall;
+    float slideTime;
+    HoverCar piloting;     // the flying car you're stuck on and flying, if any
+    float noPilotTimer;
     float rampTimer;
     Mover lastRide;
     Vector3 lastPlatV;
     Vector3 lastGroundNormal = Vector3.up;
-    Vector3 wallNormal, lastWallJump;
-    float steerDelay;
+    Vector3 wallNormal;
     float eyeDrop;         // first person: the camera dips while you slide
     float fovNow;
     Camera camera3d;
@@ -233,8 +220,8 @@ public class SlideController : MonoBehaviour
         if (alwaysBoard && board != null) { OnBoard = true; carrying = false; boardRot = Quaternion.LookRotation(s.forward); }
         jumpBuffer = 0f;
         sinceGrounded = 1f;
-        slideJumpTimer = steerDelay = 0f;
-        lastWallJump = Vector3.zero;
+        slideJumpTimer = 0f;
+        if (piloting != null) { piloting.Release(); piloting = null; }
         flip = -1f;
         grindRail = null;
         noRailTimer = 0f;
@@ -289,12 +276,33 @@ public class SlideController : MonoBehaviour
     {
         float dt = Time.fixedDeltaTime;
         jumpCooldown -= dt;
-        steerDelay -= dt;
+        noPilotTimer -= dt;
         noRailTimer -= dt;
 
         if (grindRail != null)
         {
             if (Grind(inp, dt)) return;
+        }
+
+        if (piloting != null)
+        {
+            if (inp.dismount || (inp.jump && !piloting.Flying))
+            {
+                // jump off: up and away with the car's speed
+                Vector3 off = piloting.Velocity + Vector3.up * jumpSpeed;
+                piloting.Release();
+                piloting = null;
+                noPilotTimer = 1f;
+                rb.linearVelocity = off;
+                StartJump();
+                return;
+            }
+            piloting.Fly(inp, yaw, dt);
+            Vector3 seat = piloting.SeatPosition + Vector3.up * ball.radius;
+            rb.position = seat; transform.position = seat;
+            rb.linearVelocity = piloting.Velocity - Physics.gravity * dt;
+            Grounded = true;
+            return;
         }
 
         RaycastHit hit;
@@ -310,7 +318,9 @@ public class SlideController : MonoBehaviour
             Vector3 lv = rb.linearVelocity;
             if (lv.y < 0f) rb.linearVelocity = new Vector3(lv.x, 0f, lv.z);
         }
-        if (Grounded) lastWallJump = Vector3.zero;
+        // ride up the ramp on the back of a flying car and you're stuck on it, flying it
+        HoverCar hover = Grounded && hit.collider != null ? hit.collider.GetComponentInParent<HoverCar>() : null;
+        if (hover != null && piloting == null && noPilotTimer <= 0f) { piloting = hover; hover.Board(); }
 
         // flying off the top of a ramp on the board: keep all your speed, pointed the way the ramp was going,
         // plus an extra pop, so kickers send you. (At speed you're only on a kicker for a step or two, so
@@ -319,7 +329,12 @@ public class SlideController : MonoBehaviour
         rampTimer -= dt;
         if (OnBoard && Physics.SphereCast(rb.position + Vector3.up * CastBack, ball.radius * 0.9f, Vector3.down, out rh, 0.5f + CastBack, ~0, QueryTriggerInteraction.Ignore)
             && rh.normal.y < 0.97f && rh.normal.y > 0.4f && Vector3.Dot(new Vector3(rh.normal.x, 0f, rh.normal.z), rb.linearVelocity) < 0f)   // a ramp you're going up
-        { lastGroundNormal = rh.normal; rampTimer = 0.12f; }
+        {
+            // the ramp on the back of a flying car: that's you on it, flying it (rather than launched off it)
+            var hc = rh.collider.GetComponentInParent<HoverCar>();
+            if (hc != null && piloting == null && noPilotTimer <= 0f) { piloting = hc; hc.Board(); return; }
+            lastGroundNormal = rh.normal; rampTimer = 0.12f;
+        }
         if (OnBoard && !Grounded && rampTimer > 0f && grindRail == null)
         {
             Vector3 lv = rb.linearVelocity;
@@ -378,22 +393,6 @@ public class SlideController : MonoBehaviour
         if (torso != null) torso.enabled = !sliding;
 
         touchingWall = !Grounded && FindWall(out wallNormal);
-        // wall run: in the air, going fast along a wall, you run (or ride) along it, barely sinking
-        wallRunning = false;
-        if (touchingWall && steerDelay <= 0f)
-        {
-            Vector3 fv = new Vector3(v.x, 0f, v.z), alongWall = Vector3.ProjectOnPlane(fv, wallNormal);
-            wallRunning = alongWall.magnitude > wallRunMinSpeed && Vector3.Angle(fv, alongWall) < 50f;
-            if (wallRunning)
-            {
-                float keep = fv.magnitude;
-                Vector3 run = alongWall.normalized * keep;
-                v.x = run.x - wallNormal.x * 0.6f; v.z = run.z - wallNormal.z * 0.6f;   // along it, pressed onto it
-                v -= Physics.gravity * g * wallRunHold * dt;
-                if (v.y < -wallRunMaxFall) v.y = -wallRunMaxFall;
-            }
-        }
-
         if (Grounded)
         {
             // work in the plane of the ground; the part into/out of it is left to physics
@@ -427,14 +426,13 @@ public class SlideController : MonoBehaviour
             v = vT + vN + platV;
             if (ride != null && platUp > 0f) v.y = Mathf.Max(v.y, platUp);   // a flying car going up lifts you with it
         }
-        else if (wallRunning) { }   // along the wall: your speed carries you
         else
         {
             // in the air: nearly as much control as on the ground. Speed over running pace (from hops, the
             // board, a wall jump) is kept and steered rather than braked; nothing pressed slows you gently
             Vector3 vH = new Vector3(v.x, 0f, v.z);
             Vector3 wishH = new Vector3(wish.x, 0f, wish.z).normalized * wish.magnitude;
-            float accel = steerDelay > 0f ? airAccel * 0.15f : airAccel;
+            float accel = airAccel;
             if (wishH.sqrMagnitude < 0.01f) vH = Vector3.MoveTowards(vH, Vector3.zero, airStop * dt);
             else if (vH.magnitude > top)
             {
@@ -449,12 +447,10 @@ public class SlideController : MonoBehaviour
         }
 
         // jump buffering: a press shortly before you land still counts; coyote time: shortly after you run
-        // off an edge you can still jump. In the air against a wall it's a wall jump instead
+        // off an edge you can still jump
         if (inp.jump) jumpBuffer = jumpBufferTime; else jumpBuffer -= dt;
         if (Grounded) sinceGrounded = 0f; else sinceGrounded += dt;
         bool canJump = (Grounded || sinceGrounded < coyoteTime) && jumpCooldown <= 0f;
-        bool canWallJump = !canJump && touchingWall && jumpCooldown <= 0f
-                           && (lastWallJump == Vector3.zero || Vector3.Dot(wallNormal, lastWallJump) < 0.5f);   // not the same wall twice running
         if (jumpBuffer > 0f && canJump)
         {
             jumpBuffer = 0f;
@@ -469,17 +465,6 @@ public class SlideController : MonoBehaviour
                 fl += fl.normalized * Mathf.Min(hopBoost, hopSpeedCap - fl.magnitude);
                 v.x = fl.x; v.z = fl.z;
             }
-            StartJump();
-        }
-        else if (jumpBuffer > 0f && canWallJump)
-        {
-            // wall jump: off the wall and up, keeping some of your speed along it
-            jumpBuffer = 0f;
-            Vector3 along = Vector3.ProjectOnPlane(new Vector3(v.x, 0f, v.z), wallNormal) * 0.6f;
-            v = along + wallNormal * wallJumpOut + Vector3.up * wallJumpUp;
-            lastWallJump = wallNormal;
-            steerDelay = wallJumpSteerDelay;
-            touchingWall = false;
             StartJump();
         }
         else if (holdingJump)
@@ -505,7 +490,7 @@ public class SlideController : MonoBehaviour
         }
 
         lastStrafe = inp.strafe;
-        if (OnBoard && noRailTimer <= 0f && !Grounded) TryLockOntoRail();
+        if (OnBoard && noRailTimer <= 0f) TryLockOntoRail();
 
         lastRide = ride;
         lastPlatV = platV;
@@ -605,7 +590,8 @@ public class SlideController : MonoBehaviour
     {
         if (rails == null) return;
         Vector3 p = rb.position, v = rb.linearVelocity;
-        if (v.y > 6f || new Vector3(v.x, 0f, v.z).magnitude < 1.5f) return;
+        if (v.y > 6f) return;
+        float flatSpeed = new Vector3(v.x, 0f, v.z).magnitude;
         SkateRail best = null; int bestSeg = 0; float bestU = 0f, bestD = float.MaxValue;
         foreach (var r in rails)
         {
@@ -618,7 +604,10 @@ public class SlideController : MonoBehaviour
             Vector3 side = off - dir * Vector3.Dot(off, dir);
             float above = side.y - RideHeight(r);
             side.y = 0f;
-            if (side.magnitude > railCatch || above < -0.3f || above > railCatchAbove) continue;
+            float reach = Mathf.Max(railCatch, r.catchRadius);
+            if (Grounded && r.catchRadius <= 0f) continue;                       // ordinary rails: only when you jump onto them
+            if (flatSpeed < 1.5f && r.forceSpeed <= 0f) continue;
+            if (side.magnitude > reach || above < -Mathf.Max(0.3f, r.catchRadius * 0.6f) || above > Mathf.Max(railCatchAbove, r.catchRadius)) continue;
             float d = side.sqrMagnitude + above * above;
             if (d < bestD) { bestD = d; best = r; bestSeg = seg; bestU = u; }
         }
@@ -681,6 +670,7 @@ public class SlideController : MonoBehaviour
         grindSpeed -= Physics.gravity.magnitude * gravityScale * 0.5f * dir.y * dt;
         float s = Mathf.Max(grindMinSpeed, Mathf.Abs(grindSpeed) - grindFriction * dt);
         if (inp.sprint) s = Mathf.MoveTowards(s, Mathf.Max(s, boardSprintSpeed), 20f * dt);   // Shift: power grind, flat out even uphill
+        if (grindRail.forceSpeed > 0f) s = Mathf.MoveTowards(s, Mathf.Max(s, grindRail.forceSpeed), 40f * dt);   // the curvy rails rush you along
         grindSpeed = Mathf.Sign(grindSpeed) * Mathf.Min(s, maxSpeed);
 
         float len = Vector3.Distance(pts[grindSeg], pts[grindSeg + 1]);
@@ -702,7 +692,6 @@ public class SlideController : MonoBehaviour
         transform.position = on;
         rb.linearVelocity = dir * grindSpeed - Physics.gravity * dt;   // cancel the physics step's gravity
         Grounded = false;
-        wallRunning = false;
         return true;
     }
 
@@ -745,11 +734,7 @@ public class SlideController : MonoBehaviour
         visualOffset = Vector3.Lerp(visualOffset, Vector3.zero, 1f - Mathf.Exp(-16f * dt));
         if (cam != null)
         {
-            // lean away from the wall while wall running
-            float rollTo = 0f;
-            if (wallRunning) rollTo = Vector3.Dot(Quaternion.Euler(0f, yaw, 0f) * Vector3.right, wallNormal) > 0f ? -12f : 12f;
-            camRoll = Mathf.Lerp(camRoll, rollTo, 1f - Mathf.Exp(-8f * dt));
-            Quaternion view = Quaternion.Euler(pitch, yaw, camRoll);
+            Quaternion view = Quaternion.Euler(pitch, yaw, 0f);
             eyeDrop = Mathf.Lerp(eyeDrop, sliding ? 0.65f : 0f, 1f - Mathf.Exp(-12f * dt));
             Vector3 eye = transform.position + visualOffset + Vector3.up * (eyeHeight - ball.radius - eyeDrop + (OnBoard ? 0.2f : 0f));
             if (thirdPerson)
@@ -773,7 +758,7 @@ public class SlideController : MonoBehaviour
             }
         }
 
-        Vector3 up = wallRunning && OnBoard ? wallNormal : Grounded ? groundNormal : Vector3.up;   // riding a wall: wheels on it
+        Vector3 up = Grounded ? groundNormal : Vector3.up;
         Vector3 feet = transform.position + visualOffset - up * ball.radius;
 
         // the board, while you're riding it: under your feet, facing where you're going, tilted with

@@ -7,6 +7,10 @@ public class SkateRail : MonoBehaviour
     public Vector3[] points;
     [Tooltip("Radius of the bar; the board sits on top of it.")]
     public float radius = 0.05f;
+    [Tooltip("How far away the board snaps onto it (0: the usual distance). Big for the curvy rails.")]
+    public float catchRadius = 0f;
+    [Tooltip("Grinding it carries you along at least this fast, uphill or not, until you jump off (0: off).")]
+    public float forceSpeed = 0f;
 
     // nearest point on the rail to p: which segment, and how far along it (0..1)
     public Vector3 Closest(Vector3 p, out int seg, out float u)
