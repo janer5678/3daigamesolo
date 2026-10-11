@@ -5,6 +5,8 @@ using UnityEngine;
 public class SlideHUD : MonoBehaviour
 {
     public SlideController player;
+    [Tooltip("Shown big for the first few seconds of the level.")]
+    public string levelName;
     [Tooltip("Screen pixels per scanline pair.")]
     public float scanlinePitch = 4f;
     [Range(0f, 1f)] public float scanlineStrength = 0.16f;
@@ -51,8 +53,15 @@ public class SlideHUD : MonoBehaviour
         if (player != null)
             Outlined(new Rect(W - 330 * k, 20 * k, 300 * k, 50 * k), Mathf.RoundToInt(player.Speed * 3.6f) + " km/h", Style(Mathf.RoundToInt(34 * k), TextAnchor.UpperRight), Cream);
         if (hintTimer > 0f)
-            Outlined(new Rect(0, H - 90 * k, W, 50 * k), "WASD move    hold SHIFT to ride    SPACE jump (again in the air: kickflip)    V camera    R restart",
+        {
+            Outlined(new Rect(0, H - 90 * k, W, 50 * k), "WASD move    hold SHIFT to ride    SPACE jump (again in the air: kickflip)    V camera    TAB next level    R restart",
                      Style(Mathf.RoundToInt(30 * k), TextAnchor.MiddleCenter), Cream);
+            if (!string.IsNullOrEmpty(levelName))
+                Outlined(new Rect(0, 60 * k, W, 90 * k), levelName, Style(Mathf.RoundToInt(72 * k), TextAnchor.MiddleCenter), Cream);
+        }
+        // the grind you're doing, while you're on a rail (A/D switches it)
+        if (player != null && player.GrindName != null)
+            Outlined(new Rect(0, H * 0.62f, W, 70 * k), player.GrindName, Style(Mathf.RoundToInt(56 * k), TextAnchor.MiddleCenter), Cream);
         if (scan != null && scanlineStrength > 0f)
             GUI.DrawTextureWithTexCoords(new Rect(0, 0, W, H), scan, new Rect(0, 0, 1, H / scanlinePitch));
     }

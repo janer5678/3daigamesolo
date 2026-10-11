@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using UnityEditor;
 using UnityEngine;
 
@@ -164,8 +165,8 @@ public static class SlideTests
             if (c.Locked && c.transform.position.y > y0 + 1f) wall += Dt;
         }
         bool back = c.Velocity.x < -4f;
-        Report("board locks onto ramps", overFunbox && air < 0.15f && peak - y0 > 2.5f && back && wall > 0.1f,
-               "over the funbox at 58km/h: " + air.ToString("F2") + "s off the ground; up the end wall " + (peak - y0).ToString("F1")
+        Report("board flies off ramps, locks onto walls", overFunbox && air > 0.15f && peak - y0 > 2.5f && back && wall > 0.1f,
+               "over the funbox at 58km/h: " + air.ToString("F2") + "s in the air; up the end wall " + (peak - y0).ToString("F1")
                + "m (" + wall.ToString("F2") + "s stuck to it) and " + (back ? "rode back down" : "didn't come back") + " in " + t.ToString("F1") + "s");
     }
 
@@ -211,23 +212,36 @@ public static class SlideTests
         // coming at it from an angle, or straight across, it still snaps on and carries you along it
         string angles = "";
         bool allAngles = true;
-        foreach (float a in new[] { 20f, 45f, 90f })
+        var names = new HashSet<string>();
+        foreach (float a in new[] { 5f, 20f, 45f, 75f, -20f, -75f })
         {
             drop(690f);
-            Vector3 p = new Vector3(690f, y + 0.5f + 0.4f + 0.5f, 18.15f + 0.6f);
+            Vector3 p = new Vector3(690f, y + 0.5f + 0.4f + 0.5f, 18f + Mathf.Sign(a) * 0.6f);   // start on the side you're coming from
             rb.position = p; c.transform.position = p;
             rb.linearVelocity = Quaternion.Euler(0f, 90f + a, 0f) * Vector3.forward * 8f;   // heading across towards the rail
             Physics.SyncTransforms();
             bool caught = false;
             for (int i = 0; i < 40 && !caught; i++) { Step(new SlideInput { push = true, kick = true }); caught = c.Grinding; }
             bool slide = c.Boardslide;
+            string gname = c.GrindName;
+            if (gname != null) names.Add(gname);
             for (int i = 0; i < 10 && c.Grinding; i++) Step(new SlideInput { push = true, kick = true });
-            bool along = caught && slide == (a > 35f) && Mathf.Abs(c.transform.position.z - 18f) < 0.05f && Mathf.Abs(c.Velocity.x) > 3f;
+            bool along = caught && slide == (Mathf.Abs(a) > 35f) && Mathf.Abs(c.transform.position.z - 18f) < 0.05f && Mathf.Abs(c.Velocity.x) > 3f;
             allAngles &= along;
-            angles += " " + a.ToString("F0") + " degrees: " + (along ? "snapped on" + (slide ? " (boardslide)" : " (on the trucks)") + ", grinding at " + (Mathf.Abs(c.Velocity.x) * 3.6f).ToString("F0") + "km/h" : "missed") + ";";
+            angles += " " + a.ToString("F0") + " degrees: " + (along ? "snapped on: " + gname + ", grinding at " + (Mathf.Abs(c.Velocity.x) * 3.6f).ToString("F0") + "km/h" : "missed") + ";";
         }
 
-        Report("board locks onto rails", rodeToEnd && jumpedOff && steppedOff && allAngles,
+        // A/D while grinding switches grind
+        drop(686f);
+        for (int i = 0; i < 25 && !c.Grinding; i++) Step(new SlideInput { push = true });
+        string g0 = c.GrindName;
+        Step(new SlideInput { push = true, strafe = 1f });
+        string g1 = c.GrindName;
+        Step(new SlideInput { push = true, strafe = 1f });   // still held: no change
+        bool switched = g0 != null && g1 != null && g0 != g1 && c.GrindName == g1;
+        angles += " D while grinding: " + g0 + " -> " + g1 + ";";
+
+        Report("board locks onto rails", rodeToEnd && jumpedOff && steppedOff && allAngles && names.Count >= 5 && switched,
                (caughtAt >= 0f ? "locked on after " + caughtAt.ToString("F2") + "s and ground to x=" + lastX.ToString("F1") + " (rail ends at 700)" : "never locked on")
                + "; Space " + (jumpedOff ? "jumps off" : "didn't jump off") + "; letting go of Shift " + (steppedOff ? "steps off" : "didn't step off") + ";" + angles);
     }
@@ -313,5 +327,47 @@ public static class SlideTests
         float turned = Vector3.Angle(Vector3.right, v);
         Report("jump height and air control", height > 0.8f && height < 1.1f && turned > 30f,
                "jump height " + height.ToString("F2") + "m; holding D through a " + air.ToString("F2") + "s jump turned you " + turned.ToString("F0") + " degrees");
+    }
+// the pink palace: standing still you stay put, riding about you stay on the floor, and you can
+    // ride down the grand staircase from the terrace
+    public static void RunPalace()
+    {
+        c = Object.FindFirstObjectByType<SlideController>();
+        c.Setup();
+        var mode = Physics.simulationMode;
+        Physics.simulationMode = SimulationMode.Script;
+        Physics.SyncTransforms();
+        failures = 0;
+        try
+        {
+            c.Respawn();
+            Physics.SyncTransforms();
+            Vector3 from = c.transform.position;
+            for (int i = 0; i < 250; i++) Step(new SlideInput());
+            float idle = Vector3.Distance(from, c.transform.position);
+
+            c.Respawn();
+            Physics.SyncTransforms();
+            float low = 99f;
+            for (int i = 0; i < 200; i++) { Step(new SlideInput { push = true, kick = true }); low = Mathf.Min(low, c.transform.position.y); }
+            float rode = c.transform.position.z - from.z;
+
+            Place(new Vector3(0f, 2.4f + 0.4f, 36f), new Vector3(0f, 0f, -6f));
+            c.yaw = 180f;
+            float stairLow = 99f;
+            for (int i = 0; i < 150; i++) { Step(new SlideInput { push = true, kick = true }); stairLow = Mathf.Min(stairLow, c.transform.position.y); }
+            Vector3 end = c.transform.position;
+            bool downStairs = end.z < 20f && end.y > 0f && end.y < 1f && stairLow > 0f;
+
+            Report("palace: stand, ride, stairs", idle < 0.5f && low > 0.2f && rode > 20f && downStairs,
+                   "idle moved " + idle.ToString("F2") + "m; rode " + rode.ToString("F0") + "m (lowest " + low.ToString("F2") + "); from the terrace down the stairs to z="
+                   + end.z.ToString("F0") + " y=" + end.y.ToString("F2"));
+        }
+        finally
+        {
+            Physics.simulationMode = mode;
+            c.Respawn();
+        }
+        Debug.Log("SLIDE_TESTS_DONE palace failures=" + failures);
     }
 }

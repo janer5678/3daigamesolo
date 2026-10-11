@@ -13,7 +13,8 @@ public struct SlideInput
 // On foot by default: slow, snappy walking. Hold Shift and you're on the board (it appears under you)
 // and pushing: it carries momentum, so you glide, carve and drift rather than sprint; WASD steers, S
 // brakes, downhill speed is kept. Let go and you skid back to walking pace. Space jumps; on the board, Space again in the air is a kickflip.
-// On the board you lock onto ramps (you follow the surface instead of flying off it) and onto
+// On the board you lock onto ramps where they curve up (you ride up quarterpipe walls instead of
+// bumping off them; where they curve away, like a funbox top or a kicker lip, you fly) and onto
 // rails (you grind along them until you jump or let go). Gravity is much heavier than Unity's
 // default, and heavier still on the way down, so jumps are quick and don't hang. V switches between
 // first and third person; K also kickflips (just for show).
@@ -22,6 +23,8 @@ public class SlideController : MonoBehaviour
 {
     public Transform cam;
     public Transform startPoint;
+    [Tooltip("Fall below this height (off the edge of a floating level) and you're put back at the start.")]
+    public float fallLimit = -300f;
     [Tooltip("The board under your feet; turns to face where you're going and tilts with the ground.")]
     public Transform board;
     [Tooltip("The skater, seen in third person. Children: Body, Leg L, Leg R (pivots at the hips).")]
@@ -111,7 +114,9 @@ public class SlideController : MonoBehaviour
     public bool Locked { get { return locked; } }
     public bool Grinding { get { return grindRail != null; } }
     public bool Flipping { get { return flip >= 0f; } }
-    public bool Boardslide { get { return grindRail != null && boardslide; } }
+    // grinding with the board turned well across the rail (a boardslide, lipslide, nose or tailslide)
+    public bool Boardslide { get { return grindRail != null && Mathf.Abs(GrindStyles[grindStyle].yaw) > 45f; } }
+    public string GrindName { get { return grindRail != null ? GrindStyles[grindStyle].name : null; } }
     public Vector3 Velocity { get { return rb.linearVelocity; } }
     public float Speed { get { return rb.linearVelocity.magnitude; } }
 
@@ -135,7 +140,8 @@ public class SlideController : MonoBehaviour
 
     Quaternion boardRot = Quaternion.identity;
     Vector3 visualOffset;  // eases the camera, board and rider over when the body snaps onto a rail
-    bool boardslide;       // grinding with the board across the rail rather than along it
+    int grindStyle = 4;    // which of GrindStyles you're doing
+    float lastStrafe;
     float flip = -1f;      // kickflip progress 0..1, or <0 when not flipping
     float stride;          // walking leg swing
     Transform body, legL, legR;
@@ -205,7 +211,7 @@ public class SlideController : MonoBehaviour
         input.jump = jumpLatch;
         jumpLatch = false;
         Tick(input);
-        if (transform.position.y < -300f) Respawn();
+        if (transform.position.y < fallLimit) Respawn();
     }
 
     // One physics step's worth of steering. Public so the editor tests can drive it.
@@ -235,6 +241,7 @@ public class SlideController : MonoBehaviour
             float along = Vector3.ProjectOnPlane(v0, n0).magnitude;
             if (Physics.SphereCast(rb.position, ball.radius * 0.95f, -n0, out hit, lockReach, ~0, QueryTriggerInteraction.Ignore)
                 && Vector3.Angle(n0, hit.normal) < lockMaxBend
+                && Vector3.Dot(hit.normal - n0, v0.normalized) < 0.03f   // the surface curving away under you (a funbox top, a kicker lip): fly off it
                 && (hit.normal.y > 0.35f || along > lockMinWallSpeed)
                 && !(n0.y < 0.5f && v0.y > 0f && hit.normal.y > n0.y + 0.05f))   // going up a wall over its lip: launch, don't wrap onto the deck
             {
@@ -359,6 +366,7 @@ public class SlideController : MonoBehaviour
             rb.linearVelocity = new Vector3(flat.x, v.y, flat.z);
         }
 
+        lastStrafe = inp.strafe;   // so a key already held when you land on a rail doesn't count as switching grinds
         if (OnBoard && noRailTimer <= 0f) TryLockOntoRail();
     }
 
@@ -405,15 +413,44 @@ public class SlideController : MonoBehaviour
         // the body snaps onto the rail straight away, but what you see slides over onto it
         Vector3 onRail = Vector3.Lerp(best.points[bestSeg], best.points[bestSeg + 1], bestU) + Vector3.up * RideHeight(best);
         visualOffset += p - onRail;
-        // come in from the side and the board turns across the rail (a boardslide); come in along it and you ride it on your trucks
-        Vector3 railFlat = new Vector3(rd.x, 0f, rd.z) * sign;
-        boardslide = Vector3.Angle(heading, railFlat) > 35f;
+        // the grind you get depends on the angle you come in at: straight along it you're on your trucks
+        // (look down for a nosegrind, up for a 5-0), a little across is a crooked or feeble, more is a
+        // nose or tailslide, and side-on is a boardslide or lipslide. Which side you come from picks which.
+        Vector3 railFlat = new Vector3(rd.x, 0f, rd.z).normalized * sign;
+        float a = Vector3.SignedAngle(railFlat, new Vector3(heading.x, 0f, heading.z), Vector3.up);
+        float abs = Mathf.Abs(a);
+        string pick = abs < 12f ? (pitch > 25f ? "Nosegrind" : pitch < -10f ? "5-0" : "50-50")
+                    : abs < 35f ? (a > 0f ? "Crooked" : "Feeble")
+                    : abs < 62f ? (a > 0f ? "Noseslide" : "Tailslide")
+                    : (a > 0f ? "Boardslide" : "Lipslide");
+        grindStyle = System.Array.FindIndex(GrindStyles, s => s.name == pick);
         grindSpeed = sign * speed;
         locked = false;
     }
+
+    // ---- grind styles: how the board sits on the rail (yaw across it, pitch nose up/down, roll)
+    public struct GrindStyleDef { public string name; public float yaw, pitch, roll; }
+    // in order round the ring A/D steps through while you're grinding
+    public static readonly GrindStyleDef[] GrindStyles =
+    {
+        new GrindStyleDef { name = "Lipslide",   yaw = -90f, pitch =  0f, roll = -6f },
+        new GrindStyleDef { name = "Tailslide",  yaw = -68f, pitch = -12f, roll = 0f },
+        new GrindStyleDef { name = "Feeble",     yaw = -18f, pitch = -7f, roll = 8f },
+        new GrindStyleDef { name = "5-0",        yaw =   0f, pitch = -11f, roll = 0f },
+        new GrindStyleDef { name = "50-50",      yaw =   0f, pitch =  0f, roll = 0f },
+        new GrindStyleDef { name = "Nosegrind",  yaw =   0f, pitch = 11f, roll = 0f },
+        new GrindStyleDef { name = "Crooked",    yaw =  18f, pitch =  8f, roll = -8f },
+        new GrindStyleDef { name = "Noseslide",  yaw =  68f, pitch = 12f, roll = 0f },
+        new GrindStyleDef { name = "Boardslide", yaw =  90f, pitch =  0f, roll = 6f },
+    };
     // one step along the rail; false when you've come off it
     bool Grind(SlideInput inp, float dt)
     {
+        // A/D while grinding: switch to the next grind round the ring
+        int stepStyle = inp.strafe > 0.5f && lastStrafe <= 0.5f ? 1 : inp.strafe < -0.5f && lastStrafe >= -0.5f ? -1 : 0;
+        lastStrafe = inp.strafe;
+        if (stepStyle != 0) grindStyle = Mathf.Clamp(grindStyle + stepStyle, 0, GrindStyles.Length - 1);
+
         Vector3[] pts = grindRail.points;
         Vector3 a = pts[grindSeg], b = pts[grindSeg + 1];
         Vector3 dir = (b - a).normalized;
@@ -527,10 +564,11 @@ public class SlideController : MonoBehaviour
                 float turnIn = 14f;
                 if (Grinding)
                 {
-                    // locked to the rail: along it on the trucks, or swung across it for a boardslide, snapping in quickly
+                    // locked to the rail, sitting on it the way the current grind style says, snapping in quickly
                     Vector3[] pts = grindRail.points;
                     Vector3 along = (pts[grindSeg + 1] - pts[grindSeg]).normalized * Mathf.Sign(grindSpeed);
-                    want = Quaternion.LookRotation(along, Vector3.up) * (boardslide ? Quaternion.Euler(0f, 90f, 0f) : Quaternion.identity);
+                    var gs = GrindStyles[grindStyle];
+                    want = Quaternion.LookRotation(along, Vector3.up) * Quaternion.Euler(gs.pitch, gs.yaw, gs.roll);
                     turnIn = 30f;
                 }
                 boardRot = Quaternion.Slerp(boardRot, want, 1f - Mathf.Exp(-turnIn * dt));

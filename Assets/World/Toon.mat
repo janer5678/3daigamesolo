@@ -25,11 +25,14 @@ Material:
     m_TexEnvs: []
     m_Ints: []
     m_Floats:
+    - _DotScale: 1.5
     - _FogDensity: 0.0011
     - _FogHeight: 220
     - _FogMax: 0.93
+    - _Glitter: 0
     m_Colors:
     - _Color: {r: 1, g: 1, b: 1, a: 1}
+    - _DotColor: {r: 1, g: 1, b: 1, a: 0}
     - _Haze: {r: 0.98, g: 0.88, b: 0.94, a: 1}
     - _HazeHigh: {r: 0.86, g: 0.95, b: 1, a: 1}
     - _ShadeTint: {r: 0.58, g: 0.58, b: 0.86, a: 1}

@@ -13,7 +13,7 @@ using UnityEngine;
 //
 // Run from the command line it also test-rides the level (SlideTests) and writes review
 // screenshots to Review/.
-public static class SkateWorldBuilder
+public static partial class SkateWorldBuilder
 {
     public const string ScenePath = "Assets/Scenes/SkatePark.unity";
     const string Folder = "Assets/World";
@@ -227,6 +227,9 @@ public static class SkateWorldBuilder
             Build();
             SlideTests.RunAll();
             Shots();
+            BuildPalace();
+            SlideTests.RunPalace();
+            PalaceShots();
         }
         catch (System.Exception e)
         {
@@ -240,7 +243,7 @@ public static class SkateWorldBuilder
     // -executeMethod SkateWorldBuilder.BuildPlayer : a Windows build in Builds/Windows
     public static void BuildPlayer()
     {
-        var report = BuildPipeline.BuildPlayer(new[] { ScenePath }, "Builds/Windows/3daigamesolo.exe",
+        var report = BuildPipeline.BuildPlayer(System.Array.ConvertAll(EditorBuildSettings.scenes, s => s.path), "Builds/Windows/3daigamesolo.exe",
                                                BuildTarget.StandaloneWindows64, BuildOptions.None);
         Debug.Log("SKATE_PLAYER_BUILD " + report.summary.result + " errors=" + report.summary.totalErrors);
         EditorApplication.Exit(report.summary.result == UnityEditor.Build.Reporting.BuildResult.Succeeded ? 0 : 1);
@@ -255,7 +258,10 @@ public static class SkateWorldBuilder
         keepClear.Clear();
         featureCount = 0;
         featureFile = null;
-        if (AssetDatabase.LoadMainAssetAtPath(Folder + "/Features.asset") != null) AssetDatabase.DeleteAsset(Folder + "/Features.asset");
+        featureAsset = Folder + "/Features.asset";
+        if (AssetDatabase.LoadMainAssetAtPath(featureAsset) != null) AssetDatabase.DeleteAsset(featureAsset);
+        ValleyPalette();
+        floorAt = Height;
 
         terrainMat = Mat("Terrain", "3daigamesolo/World/Terrain");
         toonMat = Mat("Toon", "3daigamesolo/World/Toon");
@@ -315,7 +321,7 @@ public static class SkateWorldBuilder
         var start = new GameObject("Start");
         start.transform.SetPositionAndRotation(startAt + Vector3.up * 0.2f, Quaternion.LookRotation(Flat(PathDir(4f))));
         // ---- camera, HUD and you
-        var camGO = new GameObject("Main Camera", typeof(Camera), typeof(AudioListener), typeof(SlideHUD), typeof(SkateAutoShot));
+        var camGO = new GameObject("Main Camera", typeof(Camera), typeof(AudioListener), typeof(SlideHUD), typeof(SkateAutoShot), typeof(LevelSwitcher));
         camGO.tag = "MainCamera";
         var cam = camGO.GetComponent<Camera>();
         cam.nearClipPlane = 0.1f;
@@ -324,10 +330,11 @@ public static class SkateWorldBuilder
         cam.backgroundColor = new Color(0.98f, 0.88f, 0.94f);
         var player = BuildPlayer(start.transform, camGO.transform);
         camGO.GetComponent<SlideHUD>().player = player;
+        camGO.GetComponent<SlideHUD>().levelName = "Pururin Valley";
         camGO.transform.SetPositionAndRotation(startAt + Vector3.up * 2.5f - Flat(PathDir(4f)) * 5f, Quaternion.LookRotation(Flat(PathDir(4f))));
 
         EditorSceneManager.SaveScene(scene, ScenePath);
-        EditorBuildSettings.scenes = new[] { new EditorBuildSettingsScene(ScenePath, true) };
+        SetBuildScenes();
         AssetDatabase.SaveAssets();
         Physics.SyncTransforms();
         Debug.Log("SKATE_WORLD_BUILT nearVerts=" + nearMesh.vertexCount + " farVerts=" + farMesh.vertexCount
@@ -339,13 +346,21 @@ public static class SkateWorldBuilder
 
     // ---- what's on the run ----------------------------------------------------------------------
 
-    static readonly Color32 RampTop = new Color32(250, 214, 226, 255);
-    static readonly Color32 RampSide = new Color32(226, 214, 248, 255);
-    static readonly Color32 RampSide2 = new Color32(196, 236, 242, 255);
-    static readonly Color32 Metal = new Color32(240, 240, 250, 255);
-    static readonly Color32 RailCol = new Color32(248, 150, 196, 255);
-    static readonly Color32 Concrete = new Color32(236, 228, 246, 255);
-    static readonly Color32 ConcreteDark = new Color32(206, 194, 234, 255);
+    // the colours ramps, rails and ledges are built in; each level sets its own (ValleyPalette here)
+    static Color32 RampTop, RampSide, RampSide2, Metal, RailCol, Concrete, ConcreteDark;
+    // the floor height rail posts reach down to; the valley's ground, or a level's flat floor
+    static System.Func<float, float, float> floorAt = Height;
+
+    static void ValleyPalette()
+    {
+        RampTop = new Color32(250, 214, 226, 255);
+        RampSide = new Color32(226, 214, 248, 255);
+        RampSide2 = new Color32(196, 236, 242, 255);
+        Metal = new Color32(240, 240, 250, 255);
+        RailCol = new Color32(248, 150, 196, 255);
+        Concrete = new Color32(236, 228, 246, 255);
+        ConcreteDark = new Color32(206, 194, 234, 255);
+    }
 
     static void RunFeatures()
     {
@@ -554,7 +569,7 @@ public static class SkateWorldBuilder
                 if (i > 0) acc += Vector3.Distance(pts[i - 1], pts[i]);
                 if (i != 0 && i != pts.Length - 1 && acc < 3f) continue;
                 acc = 0f;
-                Vector3 g = Ground(pts[i].x, pts[i].z);
+                Vector3 g = new Vector3(pts[i].x, floorAt(pts[i].x, pts[i].z), pts[i].z);
                 kit.Cylinder(pts[i], new Vector3(pts[i].x, Mathf.Min(g.y, pts[i].y) - 0.3f, pts[i].z), 0.04f, 6, Metal, false);
             }
         }
@@ -746,8 +761,9 @@ public static class SkateWorldBuilder
         var slippy = new PhysicsMaterial("Slippery") { dynamicFriction = 0f, staticFriction = 0f, bounciness = 0f,
             frictionCombine = PhysicsMaterialCombine.Minimum, bounceCombine = PhysicsMaterialCombine.Minimum };
         string path = Folder + "/Slippery.asset";
-        if (AssetDatabase.LoadMainAssetAtPath(path) != null) AssetDatabase.DeleteAsset(path);
-        AssetDatabase.CreateAsset(slippy, path);
+        var existing = AssetDatabase.LoadAssetAtPath<PhysicsMaterial>(path);   // shared by every level, so keep the one there is
+        if (existing != null) slippy = existing;
+        else AssetDatabase.CreateAsset(slippy, path);
         ball.sharedMaterial = slippy;
         var rb = root.GetComponent<Rigidbody>();
         rb.mass = 1f;
@@ -970,10 +986,10 @@ public static class SkateWorldBuilder
     }
 
     // all the little meshes (ramps, rails, the skater) go in one file, rebuilt each time
-    static string featureFile;
+    static string featureFile, featureAsset;
     static void SaveFeatureMesh(Mesh mesh)
     {
-        string path = Folder + "/Features.asset";
+        string path = featureAsset;
         if (featureFile == null || AssetDatabase.LoadMainAssetAtPath(path) == null)
         {
             if (AssetDatabase.LoadMainAssetAtPath(path) != null) AssetDatabase.DeleteAsset(path);

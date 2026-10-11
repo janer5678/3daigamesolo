@@ -2,6 +2,11 @@
 
 A first-person downhill sliding game in Unity 6 (6000.4.0f1), styled after the Pururin world from J's World: flat pastel cel shading, ink outlines, pink haze, teal pines, a pink dirt run and a cyan river, with faint TV scanlines over the top.
 
+**Levels** (Tab switches between them):
+
+- **Pink Palace** (`Assets/Scenes/PinkPalace.unity`, the game opens here): a Y2K pink palace on a floating island in deep space. Glittery halftone tiles, a grand staircase with handrails up to a terrace with banks either side, a fountain with a curved rail round it, a halfpipe, a quarterpipe wall, a funbox, kickers, ledges and rails, giant strawberries, floating hearts and a ringed planet. Ride out through a gap in the railing and you fall into space and start again. Built by `Assets/Editor/SkateWorldBuilder.Palace.cs`.
+- **Pururin Valley** (below).
+
 Open the project and play `Assets/Scenes/SkatePark.unity`. The ground is currently flat for testing movement (`FlatGround` in `SkateWorldBuilder.cs`; set it to false and rebuild for the downhill valley). You start at the top of the run. It winds about 650 m down the valley past kickers, rails and ledges, and ends in a flat plaza with a halfpipe, a funbox, rails, a manual pad and a big quarterpipe wall.
 
 ## Controls
@@ -16,10 +21,11 @@ First person (press **V** for third person). You walk by default; **hold Shift t
 | **Space** | jump; on the board, **Space again in the air is a kickflip** that lifts you again (once per jump; about 2.1 m total from the top of a jump); jumps you off a rail |
 | **K** | kickflip (just the animation) |
 | **V** | switch between first and third person |
+| **Tab** | next level |
 | **R** | back to the start |
 | **Esc / click** | free / recapture the mouse |
 
-On the board you lock onto ramps, so you can ride up quarterpipe walls and over funboxes without flying off (kicker lips still launch you), and onto rails: get near one at about its height, from any angle (along it, across it, or dropping onto it), and you slide onto it and grind (come in from the side and it's a boardslide; come in along it and you ride it on your trucks; sparks either way) until you jump off (Space) or let go of Shift.
+On the board you lock onto ramps where they curve up, so you ride up quarterpipe walls; where they curve away (funbox tops, kicker lips) you fly off. You also lock onto rails: get near one at about its height, from any angle (along it, across it, or dropping onto it), and you slide onto it and grind (come in from the side and it's a boardslide; come in along it and you ride it on your trucks; sparks either way) until you jump off (Space) or let go of Shift.
 Tuning lives on the Player object's `SlideController`, grouped into Third person, On foot, On the board, Ramp lock, Rail lock, Air and Kickflip. The board and skater are deliberately plain (flat colours, simple shapes, one accent colour, `BoardAccent` in the builder) so they fit whatever place you're skating through.
 
 The skateboard version (tricks, grinds, manuals, combos) is in git history at commit `7130f56`.
