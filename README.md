@@ -6,18 +6,20 @@ Open the project and play `Assets/Scenes/SkatePark.unity`. You start at the top 
 
 ## Controls
 
-First person. You walk by default; **hold Shift to ride the board** (it appears under your feet). Let go and you step off and slow back to walking pace. Gravity is heavier than Unity's default so jumps don't feel floaty; on the board it's a little lighter, so riding glides and hangs in the air a bit more.
+First person (press **V** for third person). You walk by default; **hold Shift to ride the board** (it appears under your feet). Let go and you step off and slow back to walking pace. Gravity is heavier than Unity's default so jumps don't feel floaty; on the board it's a little lighter, so riding glides and hangs in the air a bit more.
 
 | Key | |
 |---|---|
 | **Mouse** | look |
 | **WASD** | walk (about 20 km/h, snappy) |
-| **Shift** (hold) | ride the board: builds to about 54 km/h, keeps downhill speed (capped about 79 km/h); Shift alone rolls you forward; A/D carve sharp turns without losing speed, S brakes; the board locks onto ramps, so you can ride up quarterpipe walls and over funboxes without flying off (kicker lips still launch you) |
-| **Space** | jump (a short hop; you can steer in the air with WASD) |
+| **Shift** (hold) | ride the board: builds to about 54 km/h, keeps downhill speed (capped about 79 km/h); Shift alone rolls you forward; A/D carve sharp turns without losing speed, S brakes; the board locks onto ramps, so you can ride up quarterpipe walls and over funboxes without flying off (kicker lips still launch you), and onto rails: land on one and you grind along it until you jump (Space) or let go of Shift |
+| **Space** | jump (a short hop; you can steer in the air with WASD); jumps you off a rail |
+| **K** | kickflip (just an animation) |
+| **V** | switch between first and third person |
 | **R** | back to the start |
 | **Esc / click** | free / recapture the mouse |
 
-Tuning lives on the Player object's `SlideController`, grouped into On foot, On the board, and Air (gravity, jump, air steering).
+Tuning lives on the Player object's `SlideController`, grouped into Third person, On foot, On the board, Ramp lock, Rail lock, Air and Kickflip. The board and skater are deliberately plain (flat colours, simple shapes, one accent colour, `BoardAccent` in the builder) so they fit whatever place you're skating through.
 
 The skateboard version (tricks, grinds, manuals, combos) is in git history at commit `7130f56`.
 

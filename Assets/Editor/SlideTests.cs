@@ -26,6 +26,7 @@ public static class SlideTests
             JumpAndAirControl();
             BoardControl();
             RampLock();
+            RailLock();
         }
         finally
         {
@@ -164,6 +165,50 @@ public static class SlideTests
         Report("board locks onto ramps", overFunbox && air < 0.15f && peak - y0 > 2.5f && back && wall > 0.1f,
                "over the funbox at 58km/h: " + air.ToString("F2") + "s off the ground; up the end wall " + (peak - y0).ToString("F1")
                + "m (" + wall.ToString("F2") + "s stuck to it) and " + (back ? "rode back down" : "didn't come back") + " in " + t.ToString("F1") + "s");
+    }
+
+    // drop onto the plaza's flat rail on the board: it locks on and carries you along it to the end;
+    // Space jumps you off whenever you like, and so does letting go of Shift
+    static void RailLock()
+    {
+        float y = SkateWorldBuilder.Base(700f) + 0.4f;
+        var rb = c.GetComponent<Rigidbody>();
+        System.Action<float> drop = x =>
+        {
+            c.Respawn();
+            Vector3 p = new Vector3(x, y + 0.5f + 0.05f + 0.35f + 0.25f, 18.15f);
+            rb.position = p; c.transform.position = p;
+            rb.linearVelocity = new Vector3(8f, 0f, 0f);
+            c.yaw = 90f;
+            Physics.SyncTransforms();
+        };
+
+        drop(686f);
+        float t = 0f, caughtAt = -1f, lastX = 0f;
+        while (t < 4f)
+        {
+            Step(new SlideInput { push = true });
+            t += Dt;
+            if (c.Grinding) { if (caughtAt < 0f) caughtAt = t; lastX = c.transform.position.x; }
+            else if (caughtAt >= 0f) break;
+        }
+        bool rodeToEnd = caughtAt >= 0f && lastX > 699f;
+
+        drop(686f);
+        for (int i = 0; i < 25 && !c.Grinding; i++) Step(new SlideInput { push = true });
+        for (int i = 0; i < 10; i++) Step(new SlideInput { push = true });
+        Step(new SlideInput { push = true, jump = true });
+        bool jumpedOff = !c.Grinding && c.Velocity.y > 3f;
+
+        drop(686f);
+        for (int i = 0; i < 25 && !c.Grinding; i++) Step(new SlideInput { push = true });
+        bool wasOn = c.Grinding;
+        Step(new SlideInput());
+        bool steppedOff = wasOn && !c.Grinding;
+
+        Report("board locks onto rails", rodeToEnd && jumpedOff && steppedOff,
+               (caughtAt >= 0f ? "locked on after " + caughtAt.ToString("F2") + "s and ground to x=" + lastX.ToString("F1") + " (rail ends at 700)" : "never locked on")
+               + "; Space " + (jumpedOff ? "jumps off" : "didn't jump off") + "; letting go of Shift " + (steppedOff ? "steps off" : "didn't step off"));
     }
 
     // a modest hop, and you can still change direction mid-air
