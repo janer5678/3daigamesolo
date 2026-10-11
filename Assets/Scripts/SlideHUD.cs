@@ -51,7 +51,7 @@ public class SlideHUD : MonoBehaviour
         if (player != null)
             Outlined(new Rect(W - 330 * k, 20 * k, 300 * k, 50 * k), Mathf.RoundToInt(player.Speed * 3.6f) + " km/h", Style(Mathf.RoundToInt(34 * k), TextAnchor.UpperRight), Cream);
         if (hintTimer > 0f)
-            Outlined(new Rect(0, H - 90 * k, W, 50 * k), "SHIFT push    WASD nudge    SPACE jump    R restart",
+            Outlined(new Rect(0, H - 90 * k, W, 50 * k), "WASD move    SHIFT push (fast)    SPACE jump    R restart",
                      Style(Mathf.RoundToInt(30 * k), TextAnchor.MiddleCenter), Cream);
         if (scan != null && scanlineStrength > 0f)
             GUI.DrawTextureWithTexCoords(new Rect(0, 0, W, H), scan, new Rect(0, 0, 1, H / scanlinePitch));

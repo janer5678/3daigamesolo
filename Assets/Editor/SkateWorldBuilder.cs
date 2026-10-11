@@ -743,7 +743,38 @@ public static class SkateWorldBuilder
         var ctrl = root.GetComponent<SlideController>();
         ctrl.startPoint = start;
         ctrl.cam = cam;
+        ctrl.board = BuildBoard(root.transform);
         return ctrl;
+    }
+
+    // the board you see when you look down, with your shoes on it (no collider; it's just to look at)
+    static Transform BuildBoard(Transform parent)
+    {
+        Color32 deck = new Color32(112, 220, 228, 255), grip = new Color32(90, 70, 120, 255);
+        Color32 wheel = new Color32(252, 236, 200, 255), truck = new Color32(220, 220, 236, 255);
+        Color32 shoe = new Color32(250, 246, 250, 255), sole = new Color32(248, 168, 204, 255), pants = new Color32(150, 140, 220, 255);
+        var b = new SkateMeshKit();
+        b.Box(new Vector3(0f, 0.1f, 0f), new Vector3(0.22f, 0.025f, 0.7f), Quaternion.identity, deck);
+        b.Box(new Vector3(0f, 0.115f, 0f), new Vector3(0.21f, 0.006f, 0.68f), Quaternion.identity, grip);
+        foreach (float s in new[] { -1f, 1f })
+        {
+            b.Box(new Vector3(0f, 0.128f, s * 0.43f), new Vector3(0.21f, 0.025f, 0.2f), Quaternion.Euler(-s * 18f, 0f, 0f), deck);
+            b.Box(new Vector3(0f, 0.06f, s * 0.26f), new Vector3(0.17f, 0.035f, 0.05f), Quaternion.identity, truck);
+            foreach (float w in new[] { -1f, 1f })
+                b.Cylinder(new Vector3(w * 0.075f, 0.035f, s * 0.26f), new Vector3(w * 0.115f, 0.035f, s * 0.26f), 0.035f, 8, wheel);
+            // a shoe across each bolt, toes to the right, and the bottom of a trouser leg
+            b.Box(new Vector3(0.02f, 0.155f, s * 0.2f), new Vector3(0.27f, 0.07f, 0.12f), Quaternion.identity, shoe);
+            b.Box(new Vector3(0.02f, 0.125f, s * 0.2f), new Vector3(0.28f, 0.02f, 0.13f), Quaternion.identity, sole);
+            b.Box(new Vector3(-0.03f, 0.27f, s * 0.2f), new Vector3(0.15f, 0.18f, 0.15f), Quaternion.identity, pants);
+        }
+        var mesh = b.Build("Board");
+        SaveFeatureMesh(mesh);
+        var go = new GameObject("Board", typeof(MeshFilter), typeof(MeshRenderer));
+        go.transform.SetParent(parent, false);
+        go.transform.localPosition = new Vector3(0f, -0.35f, 0f);
+        go.GetComponent<MeshFilter>().sharedMesh = mesh;
+        go.GetComponent<MeshRenderer>().sharedMaterials = new[] { toonMat, outlineMat };
+        return go.transform;
     }
 
     static Transform Part(string name, Transform parent, Vector3 local, Mesh mesh)

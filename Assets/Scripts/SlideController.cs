@@ -9,14 +9,17 @@ public struct SlideInput
     public bool jump;       // Space, pressed
 }
 
-// First person on a frictionless ball. Gravity does most of the work: you slide down slopes on
-// your own and keep your speed. Shift pushes you the way you're looking; WASD nudges you
-// around, but only gently, so it all feels slippery.
+// First person, standing on a board. Grippy and fast: WASD takes you where you want to go
+// almost straight away, Shift pushes you up to a much higher speed, and letting go brings you
+// to a stop quickly. Speed you pick up going downhill is kept, and steering turns it rather
+// than braking it.
 [RequireComponent(typeof(Rigidbody), typeof(SphereCollider))]
 public class SlideController : MonoBehaviour
 {
     public Transform cam;
     public Transform startPoint;
+    [Tooltip("The board under your feet; turns to face where you're going and tilts with the ground.")]
+    public Transform board;
 
     [Header("Look")]
     public float mouseSensitivity = 2f;
@@ -25,14 +28,19 @@ public class SlideController : MonoBehaviour
     public float fovAtSpeed = 85f;
 
     [Header("Moving")]
-    [Tooltip("Shift: how hard you push, and the speed past which pushing stops helping.")]
-    public float pushAccel = 12f;
-    public float pushTopSpeed = 12f;
-    [Tooltip("WASD: a gentle nudge in any direction. Low = slippery.")]
-    public float moveAccel = 3f;
-    public float airControl = 0.35f;
+    [Tooltip("Top speed with WASD alone.")]
+    public float runSpeed = 11f;
+    [Tooltip("Top speed while holding Shift.")]
+    public float pushSpeed = 22f;
+    [Tooltip("How quickly you get up to speed. High = snappy.")]
+    public float groundAccel = 40f;
+    [Tooltip("How quickly you stop with nothing pressed. High = not slidy.")]
+    public float stopDecel = 14f;
+    [Tooltip("Degrees per second your speed turns when you're going faster than you could push.")]
+    public float fastTurnRate = 240f;
+    public float airAccel = 8f;
     public float jumpSpeed = 5.5f;
-    public float maxSpeed = 40f;
+    public float maxSpeed = 30f;
 
     public float yaw, pitch;
     public bool Grounded { get; private set; }
@@ -115,20 +123,31 @@ public class SlideController : MonoBehaviour
             right = Vector3.ProjectOnPlane(right, groundNormal).normalized;
         }
 
-        Vector3 wish = fwd * inp.forward + right * inp.strafe;
+        // Shift on its own pushes you forward
+        float f = inp.forward;
+        if (inp.push && f == 0f && inp.strafe == 0f) f = 1f;
+        Vector3 wish = fwd * f + right * inp.strafe;
         if (wish.sqrMagnitude > 1f) wish.Normalize();
-        rb.AddForce(wish * moveAccel * (Grounded ? 1f : airControl), ForceMode.Acceleration);
+        float dt = Time.fixedDeltaTime;
 
-        // Shift: push off the ground the way you're facing, until you're going fast enough
-        if (inp.push && Grounded && Vector3.Dot(rb.linearVelocity, fwd) < pushTopSpeed)
-            rb.AddForce(fwd * pushAccel, ForceMode.Acceleration);
-
-        if (inp.jump && Grounded)
+        Vector3 v = rb.linearVelocity;
+        if (Grounded)
         {
-            Vector3 v = rb.linearVelocity;
-            v.y = Mathf.Max(v.y, 0f) + jumpSpeed;
-            rb.linearVelocity = v;
+            // work in the plane of the ground; the part into/out of it is left to physics
+            Vector3 vN = Vector3.Project(v, groundNormal);
+            Vector3 vT = v - vN;
+            float top = inp.push ? pushSpeed : runSpeed;
+            if (wish.sqrMagnitude < 0.01f)
+                vT = Vector3.MoveTowards(vT, Vector3.zero, stopDecel * dt);
+            else if (vT.magnitude > top && Vector3.Dot(vT, wish) > 0f)
+                vT = Vector3.RotateTowards(vT, wish * vT.magnitude, fastTurnRate * Mathf.Deg2Rad * dt, 0f);   // keep downhill speed, just steer it
+            else
+                vT = Vector3.MoveTowards(vT, wish * top, groundAccel * dt);
+            v = vT + vN;
         }
+        else v += wish * airAccel * dt;
+        if (inp.jump && Grounded) v.y = Mathf.Max(v.y, 0f) + jumpSpeed;
+        rb.linearVelocity = v;
 
         if (rb.linearVelocity.magnitude > maxSpeed) rb.linearVelocity = rb.linearVelocity.normalized * maxSpeed;
     }
@@ -138,5 +157,15 @@ public class SlideController : MonoBehaviour
         if (cam == null) return;
         cam.SetPositionAndRotation(transform.position + Vector3.up * (eyeHeight - ball.radius), Quaternion.Euler(pitch, yaw, 0f));
         if (camera3d != null) camera3d.fieldOfView = Mathf.Lerp(fov, fovAtSpeed, Mathf.Clamp01(Speed / 25f));
+
+        if (board != null)
+        {
+            Vector3 h = rb.linearVelocity; h.y = 0f;
+            Vector3 heading = h.magnitude > 1f ? h : Quaternion.Euler(0f, yaw, 0f) * Vector3.forward;
+            Vector3 up = Grounded ? groundNormal : Vector3.up;
+            Quaternion want = Quaternion.LookRotation(Vector3.ProjectOnPlane(heading, up), up);
+            board.SetPositionAndRotation(transform.position - up * ball.radius,
+                                         Quaternion.Slerp(board.rotation, want, 1f - Mathf.Exp(-14f * Time.deltaTime)));
+        }
     }
 }

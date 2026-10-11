@@ -19,6 +19,9 @@ public class SkateAutoShot : MonoBehaviour
         for (int k = 0; k < at.Length; k++)
         {
             while (Time.time - t0 < at[k]) yield return null;
+            // the last one looks down at the board
+            var player = FindFirstObjectByType<SlideController>();
+            if (k == at.Length - 1 && player != null) { player.pitch = 70f; yield return null; }
             yield return new WaitForEndOfFrame();
             ScreenCapture.CaptureScreenshot(System.IO.Path.Combine(folder, "play-" + k + ".png"));
         }
