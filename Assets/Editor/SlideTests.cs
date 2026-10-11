@@ -27,6 +27,7 @@ public static class SlideTests
             BoardControl();
             RampLock();
             RailLock();
+            JumpFeel();
         }
         finally
         {
@@ -70,13 +71,13 @@ public static class SlideTests
         for (int i = 0; i < 25; i++) Step(new SlideInput { forward = 1f });
         float walk = c.Speed;
         float t = 0f;
-        while (c.Speed < 14f && t < 5f) { Step(new SlideInput { push = true }); t += Dt; }
+        while (c.Speed < 14f && t < 5f) { Step(new SlideInput { push = true, kick = true }); t += Dt; }
         float board = c.Speed;
         for (int i = 0; i < 75; i++) Step(new SlideInput { forward = 1f });
         float off = c.Speed;
         Report("walk, board, step off", walk > 5f && walk < 6f && board >= 14f && t < 1.5f && off < 6f,
                "walk after 0.5s: " + (walk * 3.6f).ToString("F0") + "km/h; board to " + (board * 3.6f).ToString("F0") + "km/h in " + t.ToString("F2")
-               + "s; 1.5s after letting go of Shift: " + (off * 3.6f).ToString("F0") + "km/h");
+               + "s; 1.5s after stepping off: " + (off * 3.6f).ToString("F0") + "km/h");
 
         // and standing still on the run's slope you stay put
         c.Respawn();
@@ -103,7 +104,7 @@ public static class SlideTests
             float x = c.transform.position.x;
             Vector3 to = SkateWorldBuilder.OnPath(x + 15f, 0f) - c.transform.position;
             c.yaw = Mathf.Atan2(to.x, to.z) * Mathf.Rad2Deg;
-            Step(new SlideInput { push = true });
+            Step(new SlideInput { push = true, kick = true });
             t += Dt;
             top = Mathf.Max(top, c.Speed);
         }
@@ -145,7 +146,7 @@ public static class SlideTests
         float air = 0f, t = 0f;
         while (c.transform.position.x < 714f && t < 3f)
         {
-            Step(new SlideInput { push = true });
+            Step(new SlideInput { push = true, kick = true });
             t += Dt;
             if (c.transform.position.x > 700f && !c.Grounded) air += Dt;
         }
@@ -156,7 +157,7 @@ public static class SlideTests
         t = 0f;
         while (t < 4f && !(c.Velocity.x < -4f && c.transform.position.y < y0 + 0.3f))
         {
-            Step(new SlideInput { push = true });
+            Step(new SlideInput { push = true, kick = true });
             t += Dt;
             peak = Mathf.Max(peak, c.transform.position.y);
             if (c.Locked && c.transform.position.y > y0 + 1f) wall += Dt;
@@ -168,7 +169,7 @@ public static class SlideTests
     }
 
     // drop onto the plaza's flat rail on the board: it locks on and carries you along it to the end;
-    // Space jumps you off whenever you like, and so does letting go of Shift
+    // Space jumps you off whenever you like, and Q steps you off
     static void RailLock()
     {
         float y = SkateWorldBuilder.Base(700f) + 0.4f;
@@ -187,7 +188,7 @@ public static class SlideTests
         float t = 0f, caughtAt = -1f, lastX = 0f;
         while (t < 4f)
         {
-            Step(new SlideInput { push = true });
+            Step(new SlideInput { push = true, kick = true });
             t += Dt;
             if (c.Grinding) { if (caughtAt < 0f) caughtAt = t; lastX = c.transform.position.x; }
             else if (caughtAt >= 0f) break;
@@ -195,13 +196,13 @@ public static class SlideTests
         bool rodeToEnd = caughtAt >= 0f && lastX > 699f;
 
         drop(686f);
-        for (int i = 0; i < 25 && !c.Grinding; i++) Step(new SlideInput { push = true });
-        for (int i = 0; i < 10; i++) Step(new SlideInput { push = true });
-        Step(new SlideInput { push = true, jump = true });
+        for (int i = 0; i < 25 && !c.Grinding; i++) Step(new SlideInput { push = true, kick = true });
+        for (int i = 0; i < 10; i++) Step(new SlideInput { push = true, kick = true });
+        Step(new SlideInput { push = true, kick = true, jump = true });
         bool jumpedOff = !c.Grinding && c.Velocity.y > 3f;
 
         drop(686f);
-        for (int i = 0; i < 25 && !c.Grinding; i++) Step(new SlideInput { push = true });
+        for (int i = 0; i < 25 && !c.Grinding; i++) Step(new SlideInput { push = true, kick = true });
         bool wasOn = c.Grinding;
         Step(new SlideInput());
         bool steppedOff = wasOn && !c.Grinding;
@@ -217,9 +218,9 @@ public static class SlideTests
             rb.linearVelocity = Quaternion.Euler(0f, 90f + a, 0f) * Vector3.forward * 8f;   // heading across towards the rail
             Physics.SyncTransforms();
             bool caught = false;
-            for (int i = 0; i < 40 && !caught; i++) { Step(new SlideInput { push = true }); caught = c.Grinding; }
+            for (int i = 0; i < 40 && !caught; i++) { Step(new SlideInput { push = true, kick = true }); caught = c.Grinding; }
             bool slide = c.Boardslide;
-            for (int i = 0; i < 10 && c.Grinding; i++) Step(new SlideInput { push = true });
+            for (int i = 0; i < 10 && c.Grinding; i++) Step(new SlideInput { push = true, kick = true });
             bool along = caught && slide == (a > 35f) && Mathf.Abs(c.transform.position.z - 18f) < 0.05f && Mathf.Abs(c.Velocity.x) > 3f;
             allAngles &= along;
             angles += " " + a.ToString("F0") + " degrees: " + (along ? "snapped on" + (slide ? " (boardslide)" : " (on the trucks)") + ", grinding at " + (Mathf.Abs(c.Velocity.x) * 3.6f).ToString("F0") + "km/h" : "missed") + ";";
@@ -227,9 +228,44 @@ public static class SlideTests
 
         Report("board locks onto rails", rodeToEnd && jumpedOff && steppedOff && allAngles,
                (caughtAt >= 0f ? "locked on after " + caughtAt.ToString("F2") + "s and ground to x=" + lastX.ToString("F1") + " (rail ends at 700)" : "never locked on")
-               + "; Space " + (jumpedOff ? "jumps off" : "didn't jump off") + "; letting go of Shift " + (steppedOff ? "steps off" : "didn't step off") + ";" + angles);
+               + "; Space " + (jumpedOff ? "jumps off" : "didn't jump off") + "; Q (off the board) " + (steppedOff ? "steps off" : "didn't step off") + ";" + angles);
     }
 
+    // on the board, Space again in the air is a kickflip with a little extra pop (once per jump);
+    // mashing Space on take-off doesn't stack jumps; and jumping at full speed doesn't cost you speed
+    static void JumpFeel()
+    {
+        Place(PlazaSpot, Vector3.zero);
+        float y0 = c.transform.position.y, single = y0;
+        Step(new SlideInput { push = true, jump = true });
+        for (int i = 0; i < 80; i++) { Step(new SlideInput { push = true }); single = Mathf.Max(single, c.transform.position.y); }
+
+        Place(PlazaSpot, Vector3.zero);
+        float mashed = y0;
+        for (int i = 0; i < 3; i++) Step(new SlideInput { push = true, jump = true });   // three presses in a row on take-off
+        for (int i = 0; i < 80; i++) { Step(new SlideInput { push = true }); mashed = Mathf.Max(mashed, c.transform.position.y); }
+
+        Place(PlazaSpot, Vector3.zero);
+        Step(new SlideInput { push = true, jump = true });
+        for (int i = 0; i < 12; i++) Step(new SlideInput { push = true });
+        bool flipBefore = c.Flipping;
+        Step(new SlideInput { push = true, jump = true });
+        bool flipped = !flipBefore && c.Flipping;
+        float vyAfter = c.Velocity.y;
+        Step(new SlideInput { push = true, jump = true });   // a third press does nothing
+        bool onlyOnce = c.Velocity.y < vyAfter;
+
+        Place(PlazaSpot, new Vector3(21f, 0f, 0f));
+        float before = new Vector3(c.Velocity.x, 0f, c.Velocity.z).magnitude;
+        Step(new SlideInput { push = true, jump = true, forward = 1f });
+        float after = new Vector3(c.Velocity.x, 0f, c.Velocity.z).magnitude;
+
+        bool ok = Mathf.Abs(mashed - single) < 0.6f * (single - y0) && flipped && onlyOnce && after > before - 0.5f;
+        Report("double jump kickflip, no stacked jumps, no speed lost", ok,
+               "board jump " + (single - y0).ToString("F2") + "m; mashing Space on take-off " + (mashed - y0).ToString("F2") + "m (includes the kickflip pop); "
+               + (flipped ? "Space in the air kickflips" : "no kickflip in the air") + (onlyOnce ? ", once" : ", MORE THAN ONCE")
+               + "; jumping at " + (before * 3.6f).ToString("F0") + "km/h leaves you at " + (after * 3.6f).ToString("F0") + "km/h");
+    }
     // a modest hop, and you can still change direction mid-air
     static void JumpAndAirControl()
     {
@@ -242,8 +278,8 @@ public static class SlideTests
         // on the board you jump higher
         Place(PlazaSpot, Vector3.zero);
         y0 = c.transform.position.y; float boardPeak = y0, hang = 0f;
-        Step(new SlideInput { push = true, jump = true });
-        while (!c.Grounded && hang < 3f || hang < 0.1f) { Step(new SlideInput { push = true }); hang += Dt; boardPeak = Mathf.Max(boardPeak, c.transform.position.y); }
+        Step(new SlideInput { push = true, kick = true, jump = true });
+        while (!c.Grounded && hang < 3f || hang < 0.1f) { Step(new SlideInput { push = true, kick = true }); hang += Dt; boardPeak = Mathf.Max(boardPeak, c.transform.position.y); }
         float boardHeight = boardPeak - y0;
         Report("board jumps higher than on foot", boardHeight > height + 0.15f && boardHeight < 1.6f,
                "on foot " + height.ToString("F2") + "m; on the board " + boardHeight.ToString("F2") + "m with " + hang.ToString("F2") + "s in the air");
