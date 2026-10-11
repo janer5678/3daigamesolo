@@ -7,9 +7,11 @@ Whenever you change anything in this project, finish by building the game and op
 1. Rebuild the scene and run the test rides (Unity must be closed for batch mode):
    `"C:/Program Files/Unity/Hub/Editor/6000.4.0f1/Editor/Unity.exe" -batchmode -projectPath "C:/Users/OEM/Documents/GitHub/3daigamesolo" -executeMethod SkateWorldBuilder.BuildFromCommandLine -logFile <scratchpad>/build.log`
    then check the log for `error CS` and `SLIDE_TEST FAIL`.
-2. Make the Windows build:
+2. Close any copy of the game that's already running (an older build; it also locks the files the build overwrites):
+   `Get-Process 3daigamesolo -ErrorAction SilentlyContinue | Stop-Process -Force`
+3. Make the Windows build:
    `... -executeMethod SkateWorldBuilder.BuildPlayer -logFile <scratchpad>/player.log` (look for `SKATE_PLAYER_BUILD Succeeded`).
-3. Open it for the user (detached, windowed, no `-autoshot`):
+4. Open the new build for the user (detached, windowed, no `-autoshot`), so only the most recent build is running:
    `Start-Process "C:\Users\OEM\Documents\GitHub\3daigamesolo\Builds\Windows\3daigamesolo.exe"`
 
 If a step fails, say so instead of opening an old build.
