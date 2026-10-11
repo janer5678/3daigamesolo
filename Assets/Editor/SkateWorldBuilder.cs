@@ -236,6 +236,12 @@ public static partial class SkateWorldBuilder
             BuildAkiba();
             SlideTests.RunAkiba();
             AkibaShots();
+            BuildAero();
+            SlideTests.RunAero();
+            AeroShots();
+            BuildInfinity();
+            SlideTests.RunInfinity();
+            InfinityShots();
         }
         catch (System.Exception e)
         {

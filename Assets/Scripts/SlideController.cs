@@ -172,7 +172,8 @@ public class SlideController : MonoBehaviour
     float noPilotTimer;
     float rampTimer;
     Object lastRide;       // the moving thing you were standing on last step (a Mover or an Escalator)
-    bool launched;         // thrown by a launch pad: no air drag till you land, so the arc lands you where it's aimed
+    bool launched;         // thrown by a launch pad or a ring: no air drag till you land, so the arc lands you where it's aimed
+    bool stickLanding;     // (a launch pad: and you stick the landing)
     Vector3 lastPlatV;
     Vector3 lastGroundNormal = Vector3.up;
     Vector3 wallNormal;
@@ -193,6 +194,8 @@ public class SlideController : MonoBehaviour
 
     SkateRail[] rails;
     Updraft[] updrafts;
+    BoostRing[] rings;
+    float ringBlock;       // just went through a ring: not again straight away
     float shake;           // camera shake left, after an explosion
     float bounceBlock;     // just bounced: don't bounce again off the same thing straight away
     SkateRail grindRail;   // the rail you're grinding, if any
@@ -211,6 +214,7 @@ public class SlideController : MonoBehaviour
         if (board != null && boardHome == Vector3.zero) { boardHome = board.position; boardHomeRot = board.rotation; }
         rails = Object.FindObjectsByType<SkateRail>(FindObjectsSortMode.None);
         updrafts = Object.FindObjectsByType<Updraft>(FindObjectsSortMode.None);
+        rings = Object.FindObjectsByType<BoostRing>(FindObjectsSortMode.None);
     }
 
     void Start()
@@ -413,7 +417,8 @@ public class SlideController : MonoBehaviour
             // landing from a launch pad: you stick it (rolling on at a cruise) rather than shooting off the far side
             launched = false;
             Vector3 lf = new Vector3(v.x, 0f, v.z);
-            if (lf.magnitude > boardSpeed) { lf = lf.normalized * boardSpeed; v.x = lf.x; v.z = lf.z; }
+            if (stickLanding && lf.magnitude > boardSpeed) { lf = lf.normalized * boardSpeed; v.x = lf.x; v.z = lf.z; }
+            stickLanding = false;
         }
         if (!Grounded && v.y < 0f && !launched) g *= fallBoost;   // (a launch pad's arc keeps plain gravity, so it lands where it's aimed)
         v += Physics.gravity * (g - 1f) * dt;
@@ -552,6 +557,7 @@ public class SlideController : MonoBehaviour
                 StartJump();
                 holdingJump = false;
                 launched = true;
+                stickLanding = true;
             }
             var bouncer = groundCol.GetComponent<Bouncer>();
             if (bouncer != null && bounceBlock <= 0f)
@@ -572,6 +578,21 @@ public class SlideController : MonoBehaviour
                 float target = rb.position.y > u.Top - 3f ? u.lift * 0.4f : u.lift;
                 v.y = Mathf.MoveTowards(v.y, target, 80f * dt);
                 sinceGrounded = 1f;
+                break;
+            }
+        // boost rings: through one and you're shot on the way it faces
+        ringBlock -= dt;
+        if (rings != null && ringBlock <= 0f)
+            foreach (var r in rings)
+            {
+                if (r == null || !r.Through(rb.position)) continue;
+                Vector3 f = r.transform.forward;
+                if (Vector3.Dot(v, f) < 0f) f = -f;   // whichever way you go through
+                v = f * Mathf.Max(r.speed, Vector3.Dot(v, f));
+                launched = true;
+                ringBlock = 0.4f;
+                StartJump();
+                holdingJump = false;
                 break;
             }
         rb.linearVelocity = v;
