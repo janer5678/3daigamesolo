@@ -335,8 +335,8 @@ public static class SlideTests
         return ok;
     }
 // Sakura City: ride a bus roof; run up the parking garage to its roof; grind the power line from there
-    // up to the 22 m roof; wall-jump up the alley beside the tower; run up the station stairs; and land
-    // hard on the board and it shoots away from you
+    // up to the 22 m roof; wall-jump up the alley beside the tower; run up the station stairs; and the
+    // board stays with you whatever happens
     public static void RunCity()
     {
         c = Object.FindFirstObjectByType<SlideController>();
@@ -420,23 +420,9 @@ public static class SlideTests
             for (int i = 0; i < 300; i++) { Step(new SlideInput { forward = 1f }); stairTop = Mathf.Max(stairTop, c.transform.position.y); }
             bool stairs = stairTop > 10.2f;
 
-            // a hard landing on the board: it shoots out from under you
-            c.ResetBoard();
-            Place(new Vector3(-40f, 0.6f, -8f), Vector3.zero);
-            c.board.position = c.transform.position - Vector3.up * 0.35f;
-            Step(new SlideInput());
-            bool onIt = c.OnBoard;
-            rb.position = c.transform.position + Vector3.up * 8f; c.transform.position = rb.position;
-            rb.linearVelocity = new Vector3(8f, 0f, 0f);
-            Physics.SyncTransforms();
-            for (int i = 0; i < 80 && c.OnBoard; i++) Step(new SlideInput { forward = 1f });
-            bool bailed = onIt && !c.OnBoard && c.Bailed;
-            for (int i = 0; i < 25; i++) Step(new SlideInput());
-            float apart = Vector3.Distance(c.board.position, c.transform.position);
-            c.ResetBoard();
 
             // the board's always with you: on it from the start, right click steps off (carrying it) and
-            // back on, and after a bail you're back on it once you've recovered
+            // back on, and however hard you land (an 8 m drop, a sideways landing, a wall) you stay on it
             c.alwaysBoard = true;
             c.Respawn();
             Physics.SyncTransforms();
@@ -449,21 +435,21 @@ public static class SlideTests
             rb.position = c.transform.position + Vector3.up * 8f; c.transform.position = rb.position;
             rb.linearVelocity = new Vector3(8f, 0f, 0f);
             Physics.SyncTransforms();
-            bool knocked = false;
-            for (int i = 0; i < 80 && !knocked; i++) { Step(new SlideInput()); knocked = c.Bailed && !c.OnBoard; }
-            for (int i = 0; i < 60; i++) Step(new SlideInput());
-            bool remounted = knocked && c.OnBoard;
+            bool stayed = true;
+            for (int i = 0; i < 80; i++) { Step(new SlideInput { strafe = i > 20 ? 1f : 0f }); stayed &= c.OnBoard; }   // turning in the air, then landing
+            rb.linearVelocity = new Vector3(15f, 0f, 0f);
+            for (int i = 0; i < 150; i++) { Step(new SlideInput { forward = 1f }); stayed &= c.OnBoard; }   // and on into whatever's ahead
             c.alwaysBoard = false;
-            bool always = startOn && stepOff && backOn && remounted;
+            bool always = startOn && stepOff && backOn && stayed;
             string alwaysLog = "; always-on board: " + (startOn ? "on it from the start" : "NOT ON IT AT THE START") + ", right click " + (stepOff && backOn ? "off and back on" : "DIDN'T TOGGLE")
-                               + ", after a bail " + (remounted ? "back on it" : "NOT BACK ON");
-            Report("city: bus, garage, power line, alley, stairs, bail", busRide && garage && lineUp && alley && stairs && bailed && apart > 2f && always,
+                               + ", hard landings and crashes " + (stayed ? "never knock you off" : "KNOCKED YOU OFF");
+            Report("city: bus, garage, power line, alley, stairs, always on the board", busRide && garage && lineUp && alley && stairs && always,
                    "bus roof: carried " + carried.ToString("F0") + "m, lowest " + lowest.ToString("F1") + "m"
                    + "; garage: " + (garage ? "ran up to the roof (" + garageTop.ToString("F1") + "m)" : "STUCK at waypoint " + wp + " (" + garageTop.ToString("F1") + "m)")
                    + "; power line: " + (lineUp ? "ground up it to the 22m roof" : "FAILED (mounted " + mounted + ", grinding " + grinding + ", ended at " + endUp.ToString("F1") + ")")
                    + "; alley: " + jumps + " wall jumps, up to " + alleyTop.ToString("F1") + "m"
                    + "; stairs: up to " + stairTop.ToString("F1") + "m"
-                   + "; 8m drop on the board: " + (bailed ? "bailed, board slid " + apart.ToString("F1") + "m away" : "NO BAIL") + alwaysLog);
+                   + alwaysLog);
         }
         finally
         {

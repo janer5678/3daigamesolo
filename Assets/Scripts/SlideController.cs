@@ -18,8 +18,8 @@ public struct SlideInput
 // wall, Space wall jumps off it (bouncing between walls climbs a shaft, but you can't climb one wall on
 // its own), and pressing into a wall while falling slides you down it slowly. C slides, with a higher
 // jump out of it.
-// There's a skateboard lying about: run over it and you're riding it, fast; Q hops off and leaves it
-// on the ground. Really big air on the board, and only that, kickflips it.
+// You always have your skateboard: you start on it and stay on it, however you land. Right click steps
+// off (carrying it) and back on. Really big air on the board, and only that, kickflips it.
 // V switches first and third person.
 [RequireComponent(typeof(Rigidbody), typeof(SphereCollider))]
 public class SlideController : MonoBehaviour
@@ -32,7 +32,7 @@ public class SlideController : MonoBehaviour
     public Transform rider;
     [Tooltip("Your skateboard.")]
     public Transform board;
-    [Tooltip("You always have the board: you start on it, you're back on it after a bail, and right click steps off (carrying it) and back on.")]
+    [Tooltip("You always have the board: you start on it and stay on it however you land, and right click steps off (carrying it) and back on.")]
     public bool alwaysBoard = true;
     [Tooltip("The last checkpoint you reached; you're put back here when you fall or press R.")]
     public Transform checkpoint;
@@ -119,15 +119,6 @@ public class SlideController : MonoBehaviour
     public float bigAirFallSpeed = 26f;
     public float flipTime = 0.45f;
     public float flipHop = 0.4f;
-    [Tooltip("Land falling faster than this and the board shoots out from under you.")]
-    public float bailFallSpeed = 16f;
-    [Tooltip("Lose this much speed in one go (hitting a wall) and you bail.")]
-    public float bailImpact = 7f;
-    [Tooltip("Land facing this many degrees away from the way you took off and you bail.")]
-    public float bailTwist = 70f;
-    [Tooltip("After a bail you're down for this long.")]
-    public float bailStun = 0.7f;
-
     [Header("Rails (on the board)")]
     [Tooltip("How close (sideways) to a rail you need to be for the board to lock onto it.")]
     public float railCatch = 0.5f;
@@ -144,7 +135,6 @@ public class SlideController : MonoBehaviour
     public bool OnWall { get { return touchingWall; } }
     public bool Flipping { get { return flip >= 0f; } }
     public bool Grinding { get { return grindRail != null; } }
-    public bool Bailed { get { return stunTimer > 0f; } }
     public string TrickName { get { return grindRail != null ? GrindStyles[grindStyle].name : null; } }
     public Vector3 Velocity { get { return rb.linearVelocity; } }
     public float Speed { get { return rb.linearVelocity.magnitude; } }
@@ -180,14 +170,7 @@ public class SlideController : MonoBehaviour
     float takeoffY;
     bool flippedThisAir;
     float flip = -1f;      // kickflip progress 0..1, or <0 when not flipping
-    Vector3 boardVel;      // the board sliding off on its own after a bail
     bool carrying;         // stepped off (right click): carrying the board, right click again to drop back on
-    bool bailedOff;        // knocked off: back on when you've recovered
-    float boardSpin;
-    float stunTimer;       // down after a bail
-    Vector3 takeoffDir;    // which way you were going when you left the ground
-    float lastFlatSpeed, lastFallSpeed;
-    bool wasGrounded;
 
     SkateRail[] rails;
     SkateRail grindRail;   // the rail you're grinding, if any
@@ -223,15 +206,14 @@ public class SlideController : MonoBehaviour
         rb.linearVelocity = Vector3.zero;
         jumpCooldown = 0f;
         holdingJump = sliding = touchingWall = false;
-        if (alwaysBoard && board != null) { OnBoard = true; carrying = bailedOff = false; boardVel = Vector3.zero; boardRot = Quaternion.LookRotation(s.forward); }
+        if (alwaysBoard && board != null) { OnBoard = true; carrying = false; boardRot = Quaternion.LookRotation(s.forward); }
         jumpBuffer = 0f;
         sinceGrounded = 1f;
         slideJumpTimer = steerDelay = 0f;
         lastWallJump = Vector3.zero;
         flip = -1f;
         grindRail = null;
-        stunTimer = noRailTimer = lastFlatSpeed = lastFallSpeed = 0f;
-        wasGrounded = false;
+        noRailTimer = 0f;
         visualOffset = Vector3.zero;
         Vector3 f = s.forward;
         yaw = Mathf.Atan2(f.x, f.z) * Mathf.Rad2Deg;
@@ -244,7 +226,6 @@ public class SlideController : MonoBehaviour
         OnBoard = false;
         if (board == null) return;
         board.SetPositionAndRotation(boardHome, boardHomeRot);
-        boardVel = Vector3.zero;
         pickupBlock = 0f;
     }
 
@@ -285,9 +266,7 @@ public class SlideController : MonoBehaviour
         float dt = Time.fixedDeltaTime;
         jumpCooldown -= dt;
         steerDelay -= dt;
-        stunTimer -= dt;
         noRailTimer -= dt;
-        SlideFreeBoard(dt);
 
         if (grindRail != null)
         {
@@ -316,18 +295,6 @@ public class SlideController : MonoBehaviour
 
         UpdateBoard(inp, dt);
 
-        // the board's easy to lose: land hard, land facing a different way from how you took off, or hit
-        // something, and it shoots out from under you
-        Vector3 nowV = rb.linearVelocity;
-        Vector3 nowFlat = new Vector3(nowV.x, 0f, nowV.z) - platV;
-        if (OnBoard)
-        {
-            bool landed = Grounded && !wasGrounded;
-            if (landed && lastFallSpeed > bailFallSpeed) Bail("Bail! (hard landing)");
-            else if (landed && nowFlat.magnitude > 5f && takeoffDir != Vector3.zero && Vector3.Angle(takeoffDir, nowFlat) > bailTwist) Bail("Bail! (landed sideways)");
-            else if ((Grounded || wasGrounded) && lastFlatSpeed - new Vector3(nowV.x, 0f, nowV.z).magnitude > bailImpact) Bail("Bail! (hit something)");
-        }
-        if (Grounded) takeoffDir = nowFlat.magnitude > 2f ? nowFlat.normalized : Vector3.zero;
 
         Quaternion look = Quaternion.Euler(0f, yaw, 0f);
         Vector3 fwd = look * Vector3.forward, right = look * Vector3.right;
@@ -338,7 +305,6 @@ public class SlideController : MonoBehaviour
         }
         Vector3 wish = fwd * inp.forward + right * inp.strafe;
         if (wish.sqrMagnitude > 1f) wish.Normalize();
-        if (stunTimer > 0f) wish = Vector3.zero;   // down after a bail
         float top = OnBoard ? (inp.sprint ? boardSprintSpeed : boardSpeed) : (inp.sprint ? sprintSpeed : walkSpeed);
 
         Vector3 v = rb.linearVelocity;
@@ -396,7 +362,7 @@ public class SlideController : MonoBehaviour
         // off an edge you can still jump. In the air against a wall it's a wall jump instead
         if (inp.jump) jumpBuffer = jumpBufferTime; else jumpBuffer -= dt;
         if (Grounded) sinceGrounded = 0f; else sinceGrounded += dt;
-        bool canJump = (Grounded || sinceGrounded < coyoteTime) && jumpCooldown <= 0f && stunTimer <= 0f;
+        bool canJump = (Grounded || sinceGrounded < coyoteTime) && jumpCooldown <= 0f;
         bool canWallJump = !canJump && touchingWall && jumpCooldown <= 0f
                            && (lastWallJump == Vector3.zero || Vector3.Dot(wallNormal, lastWallJump) < 0.5f);   // not the same wall twice running
         if (jumpBuffer > 0f && canJump)
@@ -448,10 +414,6 @@ public class SlideController : MonoBehaviour
             rb.linearVelocity = new Vector3(flat.x, v.y, flat.z);
         }
 
-        wasGrounded = Grounded;
-        lastFallSpeed = Grounded ? 0f : Mathf.Max(0f, -rb.linearVelocity.y);
-        Vector3 endV = rb.linearVelocity;
-        lastFlatSpeed = new Vector3(endV.x, 0f, endV.z).magnitude;
         lastStrafe = inp.strafe;
         if (OnBoard && noRailTimer <= 0f && !Grounded) TryLockOntoRail();
 
@@ -510,10 +472,9 @@ public class SlideController : MonoBehaviour
         Vector3 feet = rb.position - Vector3.up * ball.radius;
         if (alwaysBoard)
         {
-            // step off (carrying it) and back on with right click; back on by itself after a bail
+            // step off (carrying it) and back on with right click
             if (inp.dismount && OnBoard) { OnBoard = false; carrying = true; }
             else if (inp.dismount && carrying) Remount();
-            else if (bailedOff && stunTimer <= 0f) Remount();
             return;
         }
         if (OnBoard && inp.dismount)
@@ -529,55 +490,10 @@ public class SlideController : MonoBehaviour
         else if (!OnBoard && pickupBlock <= 0f && Vector3.Distance(feet, board.position) < pickupRadius && Mathf.Abs(feet.y - board.position.y) < 0.6f)
         {
             OnBoard = true;
-            boardVel = Vector3.zero;
             boardRot = board.rotation;
             sliding = false;
         }
         if (!OnBoard && pickupBlock > 0f && Vector3.Distance(feet, board.position) < pickupRadius) pickupBlock = 0.3f;   // move away first
-    }
-
-    // ---- bails and the loose board ------------------------------------------------------------
-
-    // the board shoots out from under you and slides away; you go down for a moment
-    void Bail(string why)
-    {
-        if (!OnBoard || board == null) return;
-        OnBoard = false;
-        Vector3 v = rb.linearVelocity;
-        Vector3 flat = new Vector3(v.x, 0f, v.z);
-        Vector3 side = Vector3.Cross(Vector3.up, flat.sqrMagnitude > 0.01f ? flat.normalized : boardRot * Vector3.forward);
-        boardVel = flat * 1.1f + side * Random.Range(-2.5f, 2.5f);
-        boardSpin = Random.Range(-400f, 400f);
-        board.position = rb.position - Vector3.up * ball.radius;
-        rb.linearVelocity = new Vector3(v.x * 0.3f, Mathf.Max(v.y, 0f), v.z * 0.3f);
-        stunTimer = bailStun;
-        pickupBlock = 0.8f;
-        bailedOff = true;
-        flip = -1f;
-        SlideHUD.Flash(why);
-    }
-
-    // a loose board rolls on along the ground, slowing, spinning, bouncing off walls and dropping off edges
-    void SlideFreeBoard(float dt)
-    {
-        if (board == null || OnBoard || boardVel.sqrMagnitude < 0.0004f) return;
-        Vector3 p = board.position;
-        Vector3 flat = new Vector3(boardVel.x, 0f, boardVel.z);
-        RaycastHit h;
-        if (flat.sqrMagnitude > 0.01f && Physics.Raycast(p + Vector3.up * 0.15f, flat.normalized, out h, flat.magnitude * dt + 0.3f, ~0, QueryTriggerInteraction.Ignore))
-        {
-            flat = Vector3.Reflect(flat, new Vector3(h.normal.x, 0f, h.normal.z).normalized) * 0.4f;   // bounce off
-            boardSpin = -boardSpin * 0.5f;
-        }
-        p += flat * dt;
-        bool onGround = Physics.Raycast(p + Vector3.up * 0.6f, Vector3.down, out h, 0.6f + Mathf.Max(0.05f, -boardVel.y * dt) + 0.02f, ~0, QueryTriggerInteraction.Ignore);
-        float vy = boardVel.y;
-        if (onGround && vy <= 0f) { p.y = h.point.y; vy = 0f; flat = Vector3.MoveTowards(flat, Vector3.zero, 3f * dt); }
-        else { vy += Physics.gravity.y * gravityScale * dt; p.y += vy * dt; }
-        boardVel = new Vector3(flat.x, vy, flat.z);
-        boardSpin = Mathf.MoveTowards(boardSpin, 0f, 300f * dt);
-        board.SetPositionAndRotation(p, Quaternion.Euler(0f, boardSpin * dt, 0f) * board.rotation);
-        if (flat.sqrMagnitude < 0.0004f && onGround) boardVel = Vector3.zero;
     }
 
     // ---- rails --------------------------------------------------------------------------------
@@ -686,9 +602,6 @@ public class SlideController : MonoBehaviour
         transform.position = on;
         rb.linearVelocity = dir * grindSpeed - Physics.gravity * dt;   // cancel the physics step's gravity
         Grounded = false;
-        wasGrounded = false;
-        lastFallSpeed = 0f;
-        takeoffDir = new Vector3(dir.x, 0f, dir.z).normalized * Mathf.Sign(grindSpeed);
         return true;
     }
 
@@ -697,13 +610,11 @@ public class SlideController : MonoBehaviour
         grindRail = null;
         noRailTimer = 0.35f;
         rb.linearVelocity = v;
-        lastFlatSpeed = new Vector3(v.x, 0f, v.z).magnitude;
     }
     void Remount()
     {
         OnBoard = true;
-        carrying = bailedOff = false;
-        boardVel = Vector3.zero;
+        carrying = false;
         boardRot = Quaternion.Euler(0f, yaw, 0f);
         sliding = false;
     }
@@ -734,7 +645,7 @@ public class SlideController : MonoBehaviour
         if (cam != null)
         {
             Quaternion view = Quaternion.Euler(pitch, yaw, 0f);
-            eyeDrop = Mathf.Lerp(eyeDrop, Bailed ? 0.9f : sliding ? 0.65f : 0f, 1f - Mathf.Exp(-12f * dt));
+            eyeDrop = Mathf.Lerp(eyeDrop, sliding ? 0.65f : 0f, 1f - Mathf.Exp(-12f * dt));
             Vector3 eye = transform.position + visualOffset + Vector3.up * (eyeHeight - ball.radius - eyeDrop + (OnBoard ? 0.2f : 0f));
             if (thirdPerson)
             {

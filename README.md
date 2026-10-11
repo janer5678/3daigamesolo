@@ -21,7 +21,7 @@ First person (press **V** for third person). Gravity is much heavier than Unity'
 | **Shift** | sprint (about 40 km/h) |
 | **Space** | jump: tap for a short one, **hold for a higher one**. Coyote time (you can still jump just after running off an edge) and jump buffering (press just before landing and you jump on touchdown). Hopping again and again the same way slowly builds speed. **In the air against a wall, Space wall jumps** off it: bounce between two walls to climb a shaft (you can't climb one wall on its own). Pressing into a wall while falling slides you down it slowly |
 | **C** | slide: a burst of speed, keeps your momentum; jump out of it to go higher |
-| **Skateboard** | it's always with you: you start each level riding it, fast (about 58 km/h, 79 with Shift). It's easy to lose: land hard, land facing a different way from how you took off, or hit something, and it shoots out from under you and slides away, and once you're back up you're on it again. **Right click** (or Q) steps off, carrying it, for running and wall jumps; right click again to drop back on. Jump onto a rail or power line on the board to grind it (A/D switches grind; Space jumps off). Only really big air kickflips it |
+| **Skateboard** | it's always with you: you start each level riding it, fast (about 58 km/h, 79 with Shift). You stay on it however you land. **Right click** (or Q) steps off, carrying it, for running and wall jumps; right click again to drop back on. Jump onto a rail or power line on the board to grind it (A/D switches grind; Space jumps off). Only really big air kickflips it |
 | **V** | switch between first and third person |
 | **Tab** | next level |
 | **R** | back to the last checkpoint (or the start) |
