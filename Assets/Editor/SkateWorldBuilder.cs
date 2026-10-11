@@ -240,10 +240,11 @@ public static partial class SkateWorldBuilder
         EditorApplication.Exit(0);
     }
 
-    // -executeMethod SkateWorldBuilder.BuildPlayer : a Windows build in Builds/Windows
+    // -executeMethod SkateWorldBuilder.BuildPlayer : a Windows build in Builds/Staging (copied to Builds/Windows once
+    // it's built, so the copy being played isn't overwritten mid-game)
     public static void BuildPlayer()
     {
-        var report = BuildPipeline.BuildPlayer(System.Array.ConvertAll(EditorBuildSettings.scenes, s => s.path), "Builds/Windows/3daigamesolo.exe",
+        var report = BuildPipeline.BuildPlayer(System.Array.ConvertAll(EditorBuildSettings.scenes, s => s.path), "Builds/Staging/3daigamesolo.exe",
                                                BuildTarget.StandaloneWindows64, BuildOptions.None);
         Debug.Log("SKATE_PLAYER_BUILD " + report.summary.result + " errors=" + report.summary.totalErrors);
         EditorApplication.Exit(report.summary.result == UnityEditor.Build.Reporting.BuildResult.Succeeded ? 0 : 1);

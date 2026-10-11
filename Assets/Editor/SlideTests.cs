@@ -263,16 +263,29 @@ public static class SlideTests
         float footTap = jumpPeak(false, false), footHold = jumpPeak(false, true);
         float boardTap = jumpPeak(true, false), boardHold = jumpPeak(true, true);
 
-        // a tap doesn't flip; holding does, and pushes you forward
+        // an ordinary jump doesn't flip the board; big air (dropping from high up) does, by itself
         Place(PlazaSpot, new Vector3(8f, 0f, 0f));
         Step(new SlideInput { push = true, jump = true });
         bool tapFlip = false;
-        for (int i = 0; i < 20; i++) { Step(new SlideInput { push = true }); tapFlip |= c.Flipping; }
-        Place(PlazaSpot, new Vector3(8f, 0f, 0f));
-        float before = c.Velocity.x;
-        Step(new SlideInput { push = true, jump = true, jumpHeld = true });
-        bool holdFlip = false; float pushed = 0f;
-        for (int i = 0; i < 20; i++) { Step(new SlideInput { push = true, jumpHeld = true }); if (!holdFlip && c.Flipping) { holdFlip = true; pushed = c.Velocity.x - before; } }
+        for (int i = 0; i < 30; i++) { Step(new SlideInput { push = true }); tapFlip |= c.Flipping; }
+        Place(PlazaSpot + Vector3.up * 6f, new Vector3(8f, 0f, 0f));
+        bool bigFlip = false;
+        for (int i = 0; i < 60 && !bigFlip; i++) { Step(new SlideInput { push = true }); bigFlip = c.Flipping; }
+
+        // coyote time: ride off the end of the manual pad and jump a moment after leaving it
+        Place(new Vector3(682f, SkateWorldBuilder.Base(700f) + 0.2f + 0.4f, -12f), new Vector3(8f, 0f, 0f));
+        int steps = 0;
+        while (c.Grounded && steps < 200) { Step(new SlideInput { push = true }); steps++; }
+        Step(new SlideInput { push = true }); Step(new SlideInput { push = true }); Step(new SlideInput { push = true });   // 0.06s off the edge
+        Step(new SlideInput { push = true, jump = true });
+        bool coyote = c.Velocity.y > 4f;
+
+        // jump buffering: press Space just before landing and you jump as you touch down
+        Place(PlazaSpot + Vector3.up * 1.2f, Vector3.zero);
+        while (!c.Grounded && c.transform.position.y > PlazaSpot.y + 0.35f && steps < 400) { Step(new SlideInput()); steps++; if (c.transform.position.y < PlazaSpot.y + 0.6f) break; }
+        Step(new SlideInput { jump = true });   // a little early
+        bool buffered = false;
+        for (int i = 0; i < 12 && !buffered; i++) { Step(new SlideInput()); buffered = c.Velocity.y > 4f; }
 
         // mashing on take-off
         Place(PlazaSpot, Vector3.zero);
@@ -309,12 +322,13 @@ public static class SlideTests
         Step(new SlideInput { push = true, jump = true, forward = 1f });
         float afterJump = new Vector3(c.Velocity.x, 0f, c.Velocity.z).magnitude;
 
-        bool ok = footHold > footTap + 0.25f && boardHold > boardTap + 0.25f && !tapFlip && holdFlip && pushed > 1.5f
+        bool ok = footHold > footTap + 0.25f && boardHold > boardTap + 0.25f && !tapFlip && bigFlip && coyote && buffered
                   && mashed - y0 < boardTap + 0.1f && hopEnd > hopStart + 2f && slid && slideSpeed > c.walkSpeed + 1.5f
                   && slideLater > c.walkSpeed && slideJump > footTap + 0.2f && afterJump > fast - 0.5f;
-        Report("hold to jump higher and kickflip, hops build speed, C slides", ok,
+        Report("hold to jump higher, big-air kickflip, coyote time, jump buffer, hops build speed, C slides", ok,
                "jump on foot " + footTap.ToString("F2") + "m tapped / " + footHold.ToString("F2") + "m held; on the board " + boardTap.ToString("F2") + " / " + boardHold.ToString("F2")
-               + "m; tap " + (tapFlip ? "KICKFLIPPED" : "no flip") + ", held " + (holdFlip ? "kickflips, pushing you +" + (pushed * 3.6f).ToString("F0") + "km/h" : "NO FLIP")
+               + "m; ordinary jump " + (tapFlip ? "KICKFLIPPED" : "no flip") + ", big drop " + (bigFlip ? "kickflips" : "NO FLIP")
+               + "; jump 0.06s after riding off an edge " + (coyote ? "works" : "IGNORED") + "; Space just before landing " + (buffered ? "jumps on touchdown" : "IGNORED")
                + "; mashing Space " + (mashed - y0).ToString("F2") + "m; 8 hops on foot: " + (hopStart * 3.6f).ToString("F0") + " -> " + (hopEnd * 3.6f).ToString("F0") + "km/h"
                + "; slide " + (slid ? "starts at " + (slideSpeed * 3.6f).ToString("F0") + "km/h, " + (slideLater * 3.6f).ToString("F0") + "km/h after 0.4s" : "DIDN'T START")
                + ", jump out of it " + slideJump.ToString("F2") + "m; jumping at " + (fast * 3.6f).ToString("F0") + "km/h leaves you at " + (afterJump * 3.6f).ToString("F0") + "km/h");
@@ -395,9 +409,21 @@ public static class SlideTests
             Vector3 end = c.transform.position;
             bool downStairs = end.z < 20f && end.y > 0f && end.y < 1f && stairLow > 0f;
 
-            Report("palace: stand, ride, stairs", idle < 0.5f && low > 0.2f && rode > 20f && downStairs,
+// wallride: in the air beside the palace's front wall, lean into it (A) and you ride along it
+            Place(new Vector3(-7f, 4.5f, 46.55f), new Vector3(12f, 0f, 0f));
+            float wy0 = c.transform.position.y;
+            int riding = 0;
+            for (int i = 0; i < 30; i++) { Step(new SlideInput { push = true, strafe = -1f }); if (c.WallRiding) riding++; }
+            float wallDrop = wy0 - c.transform.position.y;
+            float wallX = c.transform.position.x;
+            Place(new Vector3(-7f, 4.5f, 46.55f), new Vector3(12f, 0f, 0f));
+            for (int i = 0; i < 30; i++) Step(new SlideInput { push = true });   // not leaning in: you just fall
+            float freeDrop = wy0 - c.transform.position.y;
+            bool wallride = riding > 25 && wallDrop < 0.6f && freeDrop > 1f && wallX > -1f;
+            string wallLog = "; wallride: " + riding + "/30 steps on the wall, dropped " + wallDrop.ToString("F2") + "m (" + freeDrop.ToString("F2") + "m without leaning in), along to x=" + wallX.ToString("F1");
+            Report("palace: stand, ride, stairs, wallride", idle < 0.5f && low > 0.2f && rode > 20f && downStairs && wallride,
                    "idle moved " + idle.ToString("F2") + "m; rode " + rode.ToString("F0") + "m (lowest " + low.ToString("F2") + "); from the terrace down the stairs to z="
-                   + end.z.ToString("F0") + " y=" + end.y.ToString("F2"));
+                   + end.z.ToString("F0") + " y=" + end.y.ToString("F2") + wallLog);
         }
         finally
         {

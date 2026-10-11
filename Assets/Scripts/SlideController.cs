@@ -12,16 +12,13 @@ public struct SlideInput
     public bool slide;      // C, held
 }
 
-// On foot by default: slow, snappy walking. Hold Shift and you're on the board (it appears under you)
-// and pushing: it carries momentum, so you glide, carve and drift rather than sprint; WASD steers, S
-// brakes, downhill speed is kept. Let go and you skid back to walking pace. Space jumps; on the board, Space again in the air is a kickflip.
-// On the board you lock onto ramps where they curve up (you ride up quarterpipe walls instead of
-// bumping off them; where they curve away, like a funbox top or a kicker lip, you fly) and onto
-// rails (you grind along them until you jump or let go). Gravity is much heavier than Unity's
-// default, and heavier still on the way down, so jumps are quick and don't hang. V switches between
-// first and third person; K kickflips (and pushes you forward). C slides; jump out of a slide to go higher.
-// Hold Space for a higher jump; on the board, hold it long enough and you kickflip. Every hop adds a little speed.
-[RequireComponent(typeof(Rigidbody), typeof(SphereCollider))]
+// On foot by default: quick, snappy walking. Q gets you on the board (it appears under you) and off
+// again: Shift pushes, WASD steers, S brakes, and it carries momentum. C slides. Space jumps (hold it
+// to go higher), with coyote time and jump buffering, and every hop adds a little speed.
+// On the board you lock onto ramps where they curve up (quarterpipe walls) and fly off them where they
+// curve away (kicker lips, funbox tops, with an extra pop); lean into a wall in the air to wallride it;
+// lock onto rails to grind (the grind depends on your angle; A/D switches it); hold a mouse button for
+// a manual. Big air kickflips the board by itself. V switches first and third person.[RequireComponent(typeof(Rigidbody), typeof(SphereCollider))]
 public class SlideController : MonoBehaviour
 {
     public Transform cam;
@@ -72,13 +69,26 @@ public class SlideController : MonoBehaviour
     public float boardGravityScale = 3.4f;
     public float boardJumpSpeed = 9.2f;
     [Tooltip("Hold Space and you rise for up to this long with lighter gravity, so a held jump goes higher than a tap.")]
-    public float jumpHoldMax = 0.25f;
+    public float jumpHoldMax = 0.32f;
     [Tooltip("How much of gravity holding Space takes away while you're rising.")]
     public float jumpHoldLift = 0.4f;
-    [Tooltip("On the board, hold Space this long and the board kickflips.")]
-    public float flipHoldTime = 0.22f;
-    [Tooltip("How much a kickflip pushes you forward.")]
-    public float kickflipPush = 3f;
+    [Tooltip("On the board, get this high above where you took off (or fall this fast) and the board kickflips by itself.")]
+    public float bigAirHeight = 2.2f;
+    public float bigAirFallSpeed = 14f;
+    [Tooltip("Coyote time: you can still jump this long after riding off an edge.")]
+    public float coyoteTime = 0.12f;
+    [Tooltip("Jump buffering: press Space this long before you land and you jump as soon as you touch down.")]
+    public float jumpBufferTime = 0.15f;
+    [Tooltip("Extra pop straight up when you fly off the lip of a ramp, so ramps send you further.")]
+    public float rampPop = 3f;
+
+    [Header("Wallride (on the board, lean into a wall in the air)")]
+    [Tooltip("How much of gravity is held off while you ride a wall.")]
+    public float wallHold = 0.9f;
+    public float wallMaxFall = 1f;
+    public float wallMinSpeed = 3f;
+    [Tooltip("Jumping off a wallride pushes you this hard away from the wall.")]
+    public float wallJumpPush = 6f;
     [Tooltip("Speed each hop adds, so hopping again and again slowly speeds you up...")]
     public float hopBoost = 0.8f;
     [Tooltip("...up to this.")]
@@ -132,6 +142,18 @@ public class SlideController : MonoBehaviour
     public bool OnBoard { get; private set; }
     public bool Locked { get { return locked; } }
     public bool Grinding { get { return grindRail != null; } }
+    public bool WallRiding { get { return wallRiding; } }
+    // what to show on screen: the grind, a wallride or a manual
+    public string TrickName
+    {
+        get
+        {
+            if (grindRail != null) return GrindStyles[grindStyle].name;
+            if (wallRiding) return "Wallride";
+            if (OnBoard && Grounded && Mathf.Abs(manualTilt) > 6f) return manualTilt > 0f ? "Manual" : "Nose Manual";
+            return null;
+        }
+    }
     public bool Sliding { get { return sliding; } }
     public bool HoldingJump { get { return holdingJump; } }
     public bool Flipping { get { return flip >= 0f; } }
@@ -149,6 +171,15 @@ public class SlideController : MonoBehaviour
     bool jumpLatch;
     float jumpCooldown;
     bool holdingJump, flippedThisJump;
+    bool skateMode;        // Q: on the board or on foot
+    int manual;            // +1 manual (nose up, right mouse), -1 nose manual (tail up, left mouse)
+    float manualTilt;
+    float sinceGrounded;   // for coyote time
+    float jumpBuffer;
+    float takeoffY;        // where your current time in the air started, for big-air kickflips
+    bool wallRiding;
+    float noWallTimer;
+    Vector3 wallNormal;
     float jumpHold;
     bool sliding;
     float slideJumpTimer;
@@ -202,7 +233,9 @@ public class SlideController : MonoBehaviour
         rb.linearVelocity = Vector3.zero;
         grindRail = null;
         noRailTimer = noLockTimer = jumpCooldown = 0f;
-        holdingJump = sliding = false;
+        holdingJump = sliding = wallRiding = false;
+        jumpBuffer = 0f;
+        sinceGrounded = 1f;
         slideJumpTimer = 0f;
         visualOffset = Vector3.zero;
         flip = -1f;
@@ -222,30 +255,24 @@ public class SlideController : MonoBehaviour
         }
         if (Input.GetKeyDown(KeyCode.R)) Respawn();
         if (Input.GetKeyDown(KeyCode.V)) thirdPerson = !thirdPerson;
-        if (Input.GetKeyDown(KeyCode.K)) Kickflip();
 
         input.forward = (Input.GetKey(KeyCode.W) ? 1f : 0f) - (Input.GetKey(KeyCode.S) ? 1f : 0f);
         input.strafe = (Input.GetKey(KeyCode.D) ? 1f : 0f) - (Input.GetKey(KeyCode.A) ? 1f : 0f);
-        input.push = input.kick = Input.GetKey(KeyCode.LeftShift) || Input.GetKey(KeyCode.RightShift);
+        if (Input.GetKeyDown(KeyCode.Q)) skateMode = !skateMode;
+        input.push = skateMode;
+        input.kick = Input.GetKey(KeyCode.LeftShift) || Input.GetKey(KeyCode.RightShift);
+        // hold the right mouse button for a manual (nose up), the left for a nose manual (tail up)
+        manual = Cursor.lockState == CursorLockMode.Locked ? (Input.GetMouseButton(1) ? 1 : Input.GetMouseButton(0) ? -1 : 0) : 0;
         jumpLatch |= Input.GetKeyDown(KeyCode.Space);
         input.jumpHeld = Input.GetKey(KeyCode.Space);
         input.slide = Input.GetKey(KeyCode.C);
     }
 
-    // the board spins once round its length and pops up under you; purely for show
+    // the board spins once round its length and pops up under you; purely for show. It happens by
+    // itself when you get big air (see Tick)
     public void Kickflip()
     {
-        if (rb != null) rb.linearVelocity += KickflipStart(rb.linearVelocity);
-    }
-
-    // starts the flip animation; returns the push forward it gives you
-    Vector3 KickflipStart(Vector3 v)
-    {
-        if (!OnBoard || flip >= 0f) return Vector3.zero;
-        flip = 0f;
-        Vector3 h = new Vector3(v.x, 0f, v.z);
-        Vector3 dir = h.magnitude > 1f ? h.normalized : Quaternion.Euler(0f, yaw, 0f) * Vector3.forward;
-        return dir * kickflipPush;
+        if (OnBoard && flip < 0f) flip = 0f;
     }
 
     void FixedUpdate()
@@ -294,6 +321,11 @@ public class SlideController : MonoBehaviour
                 rb.position -= n0 * Mathf.Max(0f, hit.distance - CastBack - 0.01f);
                 Vector3 t = Vector3.ProjectOnPlane(v0, hit.normal);
                 if (t.sqrMagnitude > 1e-4f) rb.linearVelocity = t.normalized * along;
+            }
+            else if (n0.y > 0.5f && n0.y < 0.97f && v0.y > 0.5f && noLockTimer <= 0f)
+            {
+                // flying off the lip of a kicker or over the top of a funbox: an extra pop, so ramps send you
+                rb.linearVelocity = v0 + Vector3.up * rampPop;
             }
             else if (n0.y < 0.5f && v0.y > 0f)
             {
@@ -349,7 +381,18 @@ public class SlideController : MonoBehaviour
         sliding = Grounded && !steep && inp.slide && flatSpeed > (wasSliding ? 1f : 2.5f);
         if (sliding) slideJumpTimer = slideJumpWindow; else slideJumpTimer -= dt;
 
+        // wallride: on the board in the air, lean (press) into a wall and you ride along it, sinking slowly
+        wallRiding = OnBoard && !Grounded && CheckWall(wish);
+        if (wallRiding)
+        {
+            v -= wallNormal * Vector3.Dot(v, wallNormal);          // nothing into or away from the wall...
+            v -= wallNormal * 0.8f;                                // ...except a little press to stay on it
+            v -= Physics.gravity * g * wallHold * dt;              // most of gravity held off
+            if (v.y < -wallMaxFall) v.y = -wallMaxFall;
+        }
+
         if (Grounded && steep) { }   // locked to a wall: gravity and the ramp do the work
+        else if (wallRiding) { }     // riding along a wall: momentum and the wall do the work
         else if (Grounded)
         {
             // work in the plane of the ground; the part into/out of it is left to physics
@@ -406,11 +449,19 @@ public class SlideController : MonoBehaviour
                 vH = Vector3.MoveTowards(vH, wishH * (OnBoard ? 2f : top), airAccel * dt);
             v.x = vH.x; v.z = vH.z;
         }
-        if (inp.jump && Grounded && jumpCooldown <= 0f)
+        // jump buffering: a press shortly before you land still counts; coyote time: shortly after you ride
+        // off an edge you can still jump
+        if (inp.jump) jumpBuffer = jumpBufferTime; else jumpBuffer -= dt;
+        if (Grounded) sinceGrounded = 0f; else sinceGrounded += dt;
+        bool canJump = (Grounded || wallRiding || sinceGrounded < coyoteTime) && jumpCooldown <= 0f;
+        if (jumpBuffer > 0f && canJump)
         {
+            jumpBuffer = 0f;
+            sinceGrounded = 1f;   // no second coyote jump
             float js = OnBoard ? boardJumpSpeed : jumpSpeed;
             if (sliding || slideJumpTimer > 0f) js *= slideJumpMult;   // out of a slide: higher
-            if (OnBoard && steep) v += groundNormal * js;   // off a wall: away from it
+            if (wallRiding) { v += wallNormal * wallJumpPush; v.y = Mathf.Max(v.y, 0f) + js * 0.9f; wallRiding = false; noWallTimer = 0.3f; }   // off a wallride: push away from the wall
+            else if (OnBoard && steep) v += groundNormal * js;   // off a quarterpipe wall: away from it
             else v.y = Mathf.Max(v.y, 0f) + js;
             // every hop adds a little speed, so jumping again and again slowly builds it up
             Vector3 fl = new Vector3(v.x, 0f, v.z);
@@ -430,23 +481,25 @@ public class SlideController : MonoBehaviour
         }
         else if (holdingJump)
         {
-            // keep holding Space and you go higher (gravity's lighter while you rise), and on the board,
-            // hold it long enough and you kickflip, which also pushes you forward
+            // keep holding Space and you go higher (gravity's lighter while you rise)
             if (inp.jumpHeld)
             {
                 jumpHold += dt;
                 if (jumpHold < jumpHoldMax && v.y > 0f)
                     v -= Physics.gravity * (OnBoard ? boardGravityScale : gravityScale) * jumpHoldLift * dt;
-                if (OnBoard && !flippedThisJump && jumpHold >= flipHoldTime)
-                {
-                    flippedThisJump = true;
-                    v += KickflipStart(v);
-                }
-                if (jumpHold >= flipHoldTime + 0.05f && (flippedThisJump || !OnBoard)) holdingJump = false;
+                if (jumpHold >= jumpHoldMax) holdingJump = false;
             }
             else holdingJump = false;
         }
         rb.linearVelocity = v;
+
+        // big air on the board, going high or falling fast: the board kickflips by itself
+        if (Grounded || Grinding) { takeoffY = rb.position.y; flippedThisJump = false; }
+        else if (OnBoard && !flippedThisJump && (rb.position.y - takeoffY > bigAirHeight || v.y < -bigAirFallSpeed))
+        {
+            flippedThisJump = true;
+            Kickflip();
+        }
 
         // the speed cap is on how fast you're going along the ground, so jumping never eats your speed
         Vector3 flat = new Vector3(v.x, 0f, v.z);
@@ -458,6 +511,27 @@ public class SlideController : MonoBehaviour
 
         lastStrafe = inp.strafe;   // so a key already held when you land on a rail doesn't count as switching grinds
         if (OnBoard && noRailTimer <= 0f) TryLockOntoRail();
+    }
+
+    // a wall beside you that you're pressing into (or already riding)
+    bool CheckWall(Vector3 wish)
+    {
+        noWallTimer -= Time.fixedDeltaTime;
+        if (noWallTimer > 0f) return false;
+        Vector3 v = rb.linearVelocity;
+        Vector3 flatV = new Vector3(v.x, 0f, v.z);
+        Vector3 into = wallRiding ? -wallNormal : new Vector3(wish.x, 0f, wish.z);
+        if (into.sqrMagnitude < 0.01f) return false;
+        into.Normalize();
+        RaycastHit hit;
+        if (!Physics.SphereCast(rb.position, ball.radius * 0.85f, into, out hit, 0.45f, ~0, QueryTriggerInteraction.Ignore)) return false;
+        if (Mathf.Abs(hit.normal.y) > 0.35f) return false;                              // a wall, not a floor or ceiling
+        Vector3 n = new Vector3(hit.normal.x, 0f, hit.normal.z).normalized;
+        Vector3 wishFlat = new Vector3(wish.x, 0f, wish.z);
+        if (Vector3.Dot(wishFlat, -n) < 0.2f) return false;                            // only while you lean into it
+        if (Vector3.ProjectOnPlane(flatV, n).magnitude < wallMinSpeed) return false;    // and you're moving along it
+        wallNormal = n;
+        return true;
     }
 
     // ---- rails --------------------------------------------------------------------------------
@@ -641,7 +715,7 @@ public class SlideController : MonoBehaviour
             }
         }
 
-        Vector3 up = Grinding ? Vector3.up : (Grounded ? groundNormal : Vector3.up);
+        Vector3 up = Grinding ? Vector3.up : wallRiding ? wallNormal : (Grounded ? groundNormal : Vector3.up);   // wallriding: wheels on the wall
         Vector3 feet = transform.position + visualOffset - up * ball.radius;
 
         if (board != null)
@@ -666,9 +740,15 @@ public class SlideController : MonoBehaviour
                 }
                 boardRot = Quaternion.Slerp(boardRot, want, 1f - Mathf.Exp(-turnIn * dt));
                 // spin round the middle of the deck rather than the wheels
-                Quaternion r = boardRot * Quaternion.AngleAxis(spin, Vector3.forward);
+                // manual: the board tips up on its back wheels (right mouse) or front wheels (left mouse)
+                manualTilt = Mathf.Lerp(manualTilt, OnBoard && !Grinding && !wallRiding ? manual * 14f : 0f, 1f - Mathf.Exp(-14f * dt));
+                Quaternion tilted = boardRot * Quaternion.Euler(-manualTilt, 0f, 0f);
+                Vector3 axle = new Vector3(0f, 0.07f, manualTilt > 0f ? -0.36f : 0.36f);
+                Vector3 basePos = feet + up * pop + boardRot * axle - tilted * axle;
+                // spin round the middle of the deck rather than the wheels
+                Quaternion r = tilted * Quaternion.AngleAxis(spin, Vector3.forward);
                 Vector3 mid = Vector3.up * 0.16f;
-                board.SetPositionAndRotation(feet + up * pop + boardRot * mid - r * mid, r);
+                board.SetPositionAndRotation(basePos + tilted * mid - r * mid, r);
             }
         }
 
