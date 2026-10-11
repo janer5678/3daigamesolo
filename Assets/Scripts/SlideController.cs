@@ -52,10 +52,18 @@ public class SlideController : MonoBehaviour
     [Tooltip("Overall speed cap, mostly reached going downhill on the board.")]
     public float maxSpeed = 22f;
 
+    [Header("Ramp lock (on the board)")]
+    [Tooltip("How far the board will reach to stay stuck to a curving surface each step. Small, so kicker lips still launch you.")]
+    public float lockReach = 0.15f;
+    [Tooltip("Biggest change of slope (degrees) in one step the board follows rather than leaving the surface.")]
+    public float lockMaxBend = 50f;
+    [Tooltip("On walls steeper than about 70 degrees you fall off below this speed.")]
+    public float lockMinWallSpeed = 2.5f;
+
     [Header("Air")]
     [Tooltip("Gravity multiplier. 1 is Unity's default; higher is less floaty.")]
     public float gravityScale = 2.2f;
-    public float jumpSpeed = 5.5f;
+    public float jumpSpeed = 6.2f;
     [Tooltip("How quickly you can change direction in the air. Nothing pressed keeps your momentum.")]
     public float airAccel = 24f;
     [Tooltip("Degrees per second you can turn fast momentum in the air.")]
@@ -72,7 +80,10 @@ public class SlideController : MonoBehaviour
     Vector3 groundNormal = Vector3.up;
     SlideInput input;
     bool jumpLatch;
+    bool locked;           // riding stuck to a surface on the board
+    float noLockTimer;     // just jumped: don't get pulled back down
     Camera camera3d;
+    public bool Locked { get { return locked; } }
 
     void Awake() { Setup(); }
 
@@ -130,32 +141,62 @@ public class SlideController : MonoBehaviour
     // One physics step's worth of steering. Public so the editor tests can drive it.
     public void Tick(SlideInput inp)
     {
+        float dt = Time.fixedDeltaTime;
+        OnBoard = inp.push;
+        noLockTimer -= dt;
         RaycastHit hit;
-        Grounded = Physics.SphereCast(rb.position, ball.radius * 0.95f, Vector3.down, out hit, 0.12f, ~0, QueryTriggerInteraction.Ignore)
-                   && hit.normal.y > 0.35f;
-        groundNormal = Grounded ? hit.normal : Vector3.up;
+
+        // ramp lock: on the board, keep following the surface you're riding (up quarterpipe walls,
+        // over the top of a funbox) instead of flying off it, and carry your speed round the curve
+        bool wasLocked = locked;
+        locked = false;
+        if (OnBoard && wasLocked && noLockTimer <= 0f)
+        {
+            Vector3 n0 = groundNormal;
+            Vector3 v0 = rb.linearVelocity;
+            float along = Vector3.ProjectOnPlane(v0, n0).magnitude;
+            if (Physics.SphereCast(rb.position, ball.radius * 0.95f, -n0, out hit, lockReach, ~0, QueryTriggerInteraction.Ignore)
+                && Vector3.Angle(n0, hit.normal) < lockMaxBend
+                && (hit.normal.y > 0.35f || along > lockMinWallSpeed))
+            {
+                locked = true;
+                groundNormal = hit.normal;
+                rb.position -= n0 * Mathf.Max(0f, hit.distance - 0.01f);
+                Vector3 t = Vector3.ProjectOnPlane(v0, hit.normal);
+                if (t.sqrMagnitude > 1e-4f) rb.linearVelocity = t.normalized * along;
+            }
+        }
+        if (locked) Grounded = true;
+        else
+        {
+            Grounded = Physics.SphereCast(rb.position, ball.radius * 0.95f, Vector3.down, out hit, 0.12f, ~0, QueryTriggerInteraction.Ignore)
+                       && hit.normal.y > 0.35f;
+            groundNormal = Grounded ? hit.normal : Vector3.up;
+            locked = Grounded && OnBoard && noLockTimer <= 0f;
+        }
+
+        // riding a steep wall you just go with it; steering and pushing only work on ground you could stand on
+        bool steep = OnBoard && groundNormal.y < 0.7f;
 
         Quaternion look = Quaternion.Euler(0f, yaw, 0f);
         Vector3 fwd = look * Vector3.forward, right = look * Vector3.right;
-        if (Grounded)
+        if (Grounded && !steep)
         {
             fwd = Vector3.ProjectOnPlane(fwd, groundNormal).normalized;
             right = Vector3.ProjectOnPlane(right, groundNormal).normalized;
         }
 
-        OnBoard = inp.push;
-
-        // on the board, Shift on its own pushes you forward
+        // on the board, Shift on its own pushes you forward (on the ground; in the air it just keeps your momentum)
         float f = inp.forward;
-        if (OnBoard && f == 0f && inp.strafe == 0f) f = 1f;
+        if (OnBoard && Grounded && f == 0f && inp.strafe == 0f) f = 1f;
         Vector3 wish = fwd * f + right * inp.strafe;
         if (wish.sqrMagnitude > 1f) wish.Normalize();
-        float dt = Time.fixedDeltaTime;
         float top = OnBoard ? boardSpeed : walkSpeed;
 
         Vector3 v = rb.linearVelocity;
         v += Physics.gravity * ((OnBoard ? boardGravityScale : gravityScale) - 1f) * dt;
-        if (Grounded)
+        if (Grounded && steep) { }   // locked to a wall: gravity and the ramp do the work
+        else if (Grounded)
         {
             // work in the plane of the ground; the part into/out of it is left to physics
             Vector3 vN = Vector3.Project(v, groundNormal);
@@ -200,7 +241,13 @@ public class SlideController : MonoBehaviour
                 vH = Vector3.MoveTowards(vH, wishH * top, airAccel * dt);
             v.x = vH.x; v.z = vH.z;
         }
-        if (inp.jump && Grounded) v.y = Mathf.Max(v.y, 0f) + jumpSpeed;
+        if (inp.jump && Grounded)
+        {
+            if (OnBoard && steep) v += groundNormal * jumpSpeed;   // off a wall: away from it
+            else v.y = Mathf.Max(v.y, 0f) + jumpSpeed;
+            locked = false;
+            noLockTimer = 0.25f;
+        }
         rb.linearVelocity = v;
 
         if (rb.linearVelocity.magnitude > maxSpeed) rb.linearVelocity = rb.linearVelocity.normalized * maxSpeed;
@@ -215,10 +262,11 @@ public class SlideController : MonoBehaviour
         if (board != null) board.gameObject.SetActive(OnBoard);
         if (board != null && OnBoard)
         {
-            Vector3 h = rb.linearVelocity; h.y = 0f;
-            Vector3 heading = h.magnitude > 1f ? h : Quaternion.Euler(0f, yaw, 0f) * Vector3.forward;
             Vector3 up = Grounded ? groundNormal : Vector3.up;
-            Quaternion want = Quaternion.LookRotation(Vector3.ProjectOnPlane(heading, up), up);
+            Vector3 heading = Vector3.ProjectOnPlane(rb.linearVelocity, up);
+            if (heading.magnitude < 1f) heading = Vector3.ProjectOnPlane(Quaternion.Euler(0f, yaw, 0f) * Vector3.forward, up);
+            if (heading.sqrMagnitude < 0.01f) heading = Vector3.ProjectOnPlane(board.forward, up);   // facing straight at a wall
+            Quaternion want = Quaternion.LookRotation(heading, up);
             board.SetPositionAndRotation(transform.position - up * ball.radius,
                                          Quaternion.Slerp(board.rotation, want, 1f - Mathf.Exp(-14f * Time.deltaTime)));
         }

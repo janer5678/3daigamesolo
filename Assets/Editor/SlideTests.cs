@@ -25,6 +25,7 @@ public static class SlideTests
             StopsOnTheFlat();
             JumpAndAirControl();
             BoardControl();
+            RampLock();
         }
         finally
         {
@@ -134,6 +135,37 @@ public static class SlideTests
                "90 degree turn at 54km/h in " + t.ToString("F2") + "s, still " + (kept * 3.6f).ToString("F0") + "km/h; S stops you in " + b.ToString("F2") + "s");
     }
 
+    // on the board you stick to ramps: over the funbox at speed without taking off, and up the
+    // end-wall quarterpipe and back down it
+    static void RampLock()
+    {
+        float y = SkateWorldBuilder.Base(700f) + 0.4f;
+        Place(new Vector3(690f, y, 0f), new Vector3(16f, 0f, 0f));
+        float air = 0f, t = 0f;
+        while (c.transform.position.x < 714f && t < 3f)
+        {
+            Step(new SlideInput { push = true });
+            t += Dt;
+            if (c.transform.position.x > 700f && !c.Grounded) air += Dt;
+        }
+        bool overFunbox = c.transform.position.x >= 714f;
+
+        Place(new Vector3(838f, y, 5f), new Vector3(13f, 0f, 0f));
+        float y0 = c.transform.position.y, peak = y0, wall = 0f;
+        t = 0f;
+        while (t < 4f && !(c.Velocity.x < -4f && c.transform.position.y < y0 + 0.3f))
+        {
+            Step(new SlideInput { push = true });
+            t += Dt;
+            peak = Mathf.Max(peak, c.transform.position.y);
+            if (c.Locked && c.transform.position.y > y0 + 1f) wall += Dt;
+        }
+        bool back = c.Velocity.x < -4f;
+        Report("board locks onto ramps", overFunbox && air < 0.15f && peak - y0 > 2.5f && back && wall > 0.1f,
+               "over the funbox at 58km/h: " + air.ToString("F2") + "s off the ground; up the end wall " + (peak - y0).ToString("F1")
+               + "m (" + wall.ToString("F2") + "s stuck to it) and " + (back ? "rode back down" : "didn't come back") + " in " + t.ToString("F1") + "s");
+    }
+
     // a modest hop, and you can still change direction mid-air
     static void JumpAndAirControl()
     {
@@ -149,7 +181,7 @@ public static class SlideTests
         Step(new SlideInput { push = true, jump = true });
         while (!c.Grounded && hang < 3f || hang < 0.1f) { Step(new SlideInput { push = true }); hang += Dt; boardPeak = Mathf.Max(boardPeak, c.transform.position.y); }
         float boardHeight = boardPeak - y0;
-        Report("board is floatier than on foot", boardHeight > height + 0.15f && boardHeight < 1.3f,
+        Report("board is floatier than on foot", boardHeight > height + 0.15f && boardHeight < 1.6f,
                "on foot " + height.ToString("F2") + "m; on the board " + boardHeight.ToString("F2") + "m with " + hang.ToString("F2") + "s in the air");
 
         Place(PlazaSpot, new Vector3(11f, 0f, 0f));
@@ -158,7 +190,7 @@ public static class SlideTests
         while (!c.Grounded && air < 2f || air < 0.1f) { Step(new SlideInput { strafe = 1f }); air += Dt; }
         Vector3 v = c.Velocity; v.y = 0f;
         float turned = Vector3.Angle(Vector3.right, v);
-        Report("jump height and air control", height > 0.6f && height < 1.0f && turned > 30f,
+        Report("jump height and air control", height > 0.8f && height < 1.1f && turned > 30f,
                "jump height " + height.ToString("F2") + "m; holding D through a " + air.ToString("F2") + "s jump turned you " + turned.ToString("F0") + " degrees");
     }
 }

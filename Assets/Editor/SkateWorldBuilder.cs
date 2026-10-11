@@ -747,25 +747,80 @@ public static class SkateWorldBuilder
         return ctrl;
     }
 
-    // the board you see when you look down, with your shoes on it (no collider; it's just to look at)
+    // the board you see when you look down (no collider; it's just to look at): a popsicle deck
+    // with black grip tape, a maple edge, kicked-up nose and tail, bolts, trucks and white wheels.
+    // A bit bigger than a real board so it reads well in first person.
+    const float DeckHalfLen = 0.56f, DeckHalfWidth = 0.15f, DeckBottom = 0.135f, DeckThick = 0.024f, KickStart = 0.38f;
+
+    static float DeckHalfW(float z)
+    {
+        float e = Mathf.Abs(z) - (DeckHalfLen - DeckHalfWidth);   // rounded ends: a semicircle of the deck's half width
+        return e <= 0f ? DeckHalfWidth : DeckHalfWidth * Mathf.Sqrt(Mathf.Max(0f, 1f - (e / DeckHalfWidth) * (e / DeckHalfWidth)));
+    }
+
+    static float DeckLift(float z)
+    {
+        float k = Mathf.Abs(z) - KickStart;                         // nose and tail kick up about 18 degrees
+        return k <= 0f ? 0f : (k < 0.06f ? k * k / 0.12f * 0.32f : 0.06f * 0.16f + (k - 0.06f) * 0.32f);
+    }
+
     static Transform BuildBoard(Transform parent)
     {
-        Color32 deck = new Color32(112, 220, 228, 255), grip = new Color32(90, 70, 120, 255);
-        Color32 wheel = new Color32(252, 236, 200, 255), truck = new Color32(220, 220, 236, 255);
-        Color32 shoe = new Color32(250, 246, 250, 255), sole = new Color32(248, 168, 204, 255), pants = new Color32(150, 140, 220, 255);
+        Color32 grip = new Color32(34, 32, 40, 255), maple = new Color32(238, 214, 168, 255), bolt = new Color32(150, 150, 160, 255);
+        Color32 wheel = new Color32(250, 248, 242, 255), hub = new Color32(60, 58, 66, 255);
+        Color32 metal = new Color32(200, 200, 210, 255), base_ = new Color32(130, 84, 72, 255);
         var b = new SkateMeshKit();
-        b.Box(new Vector3(0f, 0.1f, 0f), new Vector3(0.22f, 0.025f, 0.7f), Quaternion.identity, deck);
-        b.Box(new Vector3(0f, 0.115f, 0f), new Vector3(0.21f, 0.006f, 0.68f), Quaternion.identity, grip);
+
+        // the deck: rows across its length, top (grip), bottom and edges
+        int rows = 96;
+        var topL = new Vector3[rows + 1]; var topR = new Vector3[rows + 1];
+        for (int i = 0; i <= rows; i++)
+        {
+            float z = Mathf.Lerp(-DeckHalfLen, DeckHalfLen, i / (float)rows);
+            float w = Mathf.Max(DeckHalfW(z), 0.004f), y = DeckBottom + DeckThick + DeckLift(z);
+            topL[i] = new Vector3(-w, y, z); topR[i] = new Vector3(w, y, z);
+        }
+        Vector3 down = Vector3.down * DeckThick;
+        for (int i = 0; i < rows; i++)
+        {
+            Vector3 along = topL[i + 1] - topL[i];
+            Vector3 up = Vector3.Cross(along, Vector3.right).normalized;
+            if (up.y < 0f) up = -up;
+            b.Quad(topL[i], topR[i], topR[i + 1], topL[i + 1], up, grip);
+            b.Quad(topL[i] + down, topR[i] + down, topR[i + 1] + down, topL[i + 1] + down, -up, maple);
+            b.Quad(topL[i], topL[i + 1], topL[i + 1] + down, topL[i] + down, Vector3.left + 0.2f * Vector3.forward * Mathf.Sign(topL[i].z), maple);
+            b.Quad(topR[i], topR[i + 1], topR[i + 1] + down, topR[i] + down, Vector3.right + 0.2f * Vector3.forward * Mathf.Sign(topR[i].z), maple);
+        }
+        // a thin maple line showing round the edge of the grip tape
+        for (int i = 0; i < rows; i++)
+        {
+            Vector3 lift = Vector3.up * 0.002f;
+            float inset = 0.012f;
+            Vector3 l0 = topL[i] + lift, l1 = topL[i + 1] + lift, r0 = topR[i] + lift, r1 = topR[i + 1] + lift;
+            Vector3 il0 = l0 + Vector3.right * Mathf.Min(inset, -l0.x), il1 = l1 + Vector3.right * Mathf.Min(inset, -l1.x);
+            Vector3 ir0 = r0 + Vector3.left * Mathf.Min(inset, r0.x), ir1 = r1 + Vector3.left * Mathf.Min(inset, r1.x);
+            b.Quad(l0, il0, il1, l1, Vector3.up, maple);
+            b.Quad(r0, ir0, ir1, r1, Vector3.up, maple);
+        }
+
         foreach (float s in new[] { -1f, 1f })
         {
-            b.Box(new Vector3(0f, 0.128f, s * 0.43f), new Vector3(0.21f, 0.025f, 0.2f), Quaternion.Euler(-s * 18f, 0f, 0f), deck);
-            b.Box(new Vector3(0f, 0.06f, s * 0.26f), new Vector3(0.17f, 0.035f, 0.05f), Quaternion.identity, truck);
+            float tz = s * 0.31f, deckTop = DeckBottom + DeckThick + 0.003f;
+            // four bolts in the grip over each truck
+            foreach (float bx in new[] { -0.03f, 0.03f })
+                foreach (float bz in new[] { -0.025f, 0.025f })
+                    b.Box(new Vector3(bx, deckTop, tz + bz), new Vector3(0.012f, 0.004f, 0.012f), Quaternion.identity, bolt);
+            // truck: baseplate under the deck, a kingpin block, the hanger and axle
+            b.Box(new Vector3(0f, DeckBottom - 0.008f, tz), new Vector3(0.08f, 0.016f, 0.1f), Quaternion.identity, base_);
+            b.Box(new Vector3(0f, DeckBottom - 0.035f, tz - s * 0.01f), new Vector3(0.05f, 0.04f, 0.05f), Quaternion.identity, metal);
+            b.Box(new Vector3(0f, 0.062f, tz), new Vector3(0.2f, 0.03f, 0.035f), Quaternion.identity, metal);
+            b.Cylinder(new Vector3(-0.15f, 0.05f, tz), new Vector3(0.15f, 0.05f, tz), 0.008f, 6, metal);
+            // wheels: white urethane with a dark hub on the outside
             foreach (float w in new[] { -1f, 1f })
-                b.Cylinder(new Vector3(w * 0.075f, 0.035f, s * 0.26f), new Vector3(w * 0.115f, 0.035f, s * 0.26f), 0.035f, 8, wheel);
-            // a shoe across each bolt, toes to the right, and the bottom of a trouser leg
-            b.Box(new Vector3(0.02f, 0.155f, s * 0.2f), new Vector3(0.27f, 0.07f, 0.12f), Quaternion.identity, shoe);
-            b.Box(new Vector3(0.02f, 0.125f, s * 0.2f), new Vector3(0.28f, 0.02f, 0.13f), Quaternion.identity, sole);
-            b.Box(new Vector3(-0.03f, 0.27f, s * 0.2f), new Vector3(0.15f, 0.18f, 0.15f), Quaternion.identity, pants);
+            {
+                b.Cylinder(new Vector3(w * 0.1f, 0.05f, tz), new Vector3(w * 0.145f, 0.05f, tz), 0.05f, 14, wheel);
+                b.Cylinder(new Vector3(w * 0.145f, 0.05f, tz), new Vector3(w * 0.147f, 0.05f, tz), 0.022f, 10, hub);
+            }
         }
         var mesh = b.Build("Board");
         SaveFeatureMesh(mesh);
@@ -857,6 +912,18 @@ public static class SkateWorldBuilder
         Shot(cam, new Vector3(630f, Base(630f) + 18f, -10f), new Vector3(760f, Base(700f), 5f), "05-plaza.png");
         Shot(cam, new Vector3(770f, Base(700f) + 2.5f, 27f), new Vector3(800f, Base(700f) + 1f, 27f), "06-halfpipe.png");
         Shot(cam, OnPath(300f, 20f) + Vector3.up * 40f, OnPath(300f, -60f), "08-river.png");
+
+        // the board: a close-up from the side, and what you see looking down while riding
+        var board = player.board;
+        bool was = board.gameObject.activeSelf;
+        board.gameObject.SetActive(true);
+        Vector3 bp = new Vector3(700f, Base(700f), 30f);
+        board.SetPositionAndRotation(bp, Quaternion.LookRotation(Vector3.right));
+        Shot(cam, bp + new Vector3(-0.5f, 0.55f, -1.1f), bp + Vector3.up * 0.1f, "09-board.png");
+        Shot(cam, bp + new Vector3(-0.1f, 1.5f, 0f), bp + new Vector3(0.8f, 0f, 0f), "10-board-first-person.png");
+        board.gameObject.SetActive(was);
+        board.localPosition = new Vector3(0f, -0.35f, 0f);
+        board.localRotation = Quaternion.identity;
     }
 
     static void Shot(Camera cam, Vector3 from, Vector3 lookAt, string file)
