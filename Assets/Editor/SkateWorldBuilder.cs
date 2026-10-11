@@ -767,7 +767,7 @@ public static partial class SkateWorldBuilder
         ball.sharedMaterial = slippy;
         var rb = root.GetComponent<Rigidbody>();
         rb.mass = 1f;
-        rb.linearDamping = 0.08f;
+        rb.linearDamping = 0f;   // no air drag: the controller does all the slowing down
         rb.angularDamping = 0f;
         rb.freezeRotation = true;
         rb.interpolation = RigidbodyInterpolation.Interpolate;
@@ -854,6 +854,7 @@ public static partial class SkateWorldBuilder
         var go = new GameObject("Board", typeof(MeshFilter), typeof(MeshRenderer));
         go.transform.SetParent(parent, false);
         go.transform.localPosition = new Vector3(0f, -0.35f, 0f);
+        go.transform.localScale = Vector3.one * 1.2f;   // bigger again: about 1.35 m long
         go.GetComponent<MeshFilter>().sharedMesh = mesh;
         go.GetComponent<MeshRenderer>().sharedMaterials = new[] { toonMat, outlineMat };
         return go.transform;
@@ -1037,7 +1038,7 @@ public static partial class SkateWorldBuilder
         // the skater standing on it, as seen in third person
         var rider = player.rider;
         rider.gameObject.SetActive(true);
-        rider.SetPositionAndRotation(bp + Vector3.up * 0.17f, board.rotation * Quaternion.Euler(0f, 90f, 0f));
+        rider.SetPositionAndRotation(bp + Vector3.up * 0.2f, board.rotation * Quaternion.Euler(0f, 90f, 0f));
         rider.Find("Leg L").localRotation = Quaternion.Euler(0f, 0f, -10f);
         rider.Find("Leg R").localRotation = Quaternion.Euler(0f, 0f, 10f);
         Shot(cam, bp + new Vector3(-1.2f, 2.0f, -3.4f), bp + Vector3.up * 0.9f, "11-rider.png");

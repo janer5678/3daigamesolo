@@ -4,7 +4,7 @@ A first-person downhill sliding game in Unity 6 (6000.4.0f1), styled after the P
 
 **Levels** (Tab switches between them):
 
-- **Pink Palace** (`Assets/Scenes/PinkPalace.unity`, the game opens here): a Y2K pink palace on a floating island in deep space. Glittery halftone tiles, a grand staircase with handrails up to a terrace with banks either side, a fountain with a curved rail round it, a halfpipe, a quarterpipe wall, a funbox, kickers, ledges and rails, giant strawberries, floating hearts and a ringed planet. Ride out through a gap in the railing and you fall into space and start again. Built by `Assets/Editor/SkateWorldBuilder.Palace.cs`.
+- **Pink Palace** (`Assets/Scenes/PinkPalace.unity`, the game opens here): a Y2K pink palace on a floating island in deep space. Glittery halftone tiles, a grand staircase with handrails up to a terrace with banks either side, a fountain with a curved rail round it, a halfpipe, a quarterpipe wall, a funbox, kickers, ledges and rails, giant strawberries, floating hearts and a ringed planet. Ride out through a gap in the railing and you fall into space and start again. Out of the gap on the east side runs the **space course**: floating platforms, stepping stones, rails across the gaps and kickers, climbing to a goal under a giant star, with checkpoints (hearts on poles) along the way. Built by `Assets/Editor/SkateWorldBuilder.Palace.cs`.
 - **Pururin Valley** (below).
 
 Open the project and play `Assets/Scenes/SkatePark.unity`. The ground is currently flat for testing movement (`FlatGround` in `SkateWorldBuilder.cs`; set it to false and rebuild for the downhill valley). You start at the top of the run. It winds about 650 m down the valley past kickers, rails and ledges, and ends in a flat plaza with a halfpipe, a funbox, rails, a manual pad and a big quarterpipe wall.
@@ -18,11 +18,12 @@ First person (press **V** for third person). You walk by default; **hold Shift t
 | **Mouse** | look |
 | **WASD** | walk (about 20 km/h, snappy); on the board, steer (carves keep your speed), S brakes |
 | **Shift** (hold) | ride the board and push (Shift alone pushes you forward): builds to about 54 km/h; downhill speed is kept (capped about 79 km/h along the ground) |
-| **Space** | jump; on the board, **Space again in the air is a kickflip** that lifts you again (once per jump; about 2.1 m total from the top of a jump); jumps you off a rail |
-| **K** | kickflip (just the animation) |
+| **Space** | jump: tap for a short one, **hold for a higher one**; on the board, holding it kickflips, which pushes you forward. Every hop adds a little speed, so hopping again and again builds it up. Jumps you off a rail |
+| **C** | slide: keeps your momentum (a burst of speed on foot); jump out of it to go higher |
+| **K** | kickflip (pushes you forward) |
 | **V** | switch between first and third person |
 | **Tab** | next level |
-| **R** | back to the start |
+| **R** | back to the last checkpoint (or the start) |
 | **Esc / click** | free / recapture the mouse |
 
 On the board you lock onto ramps where they curve up, so you ride up quarterpipe walls; where they curve away (funbox tops, kicker lips) you fly off. You also lock onto rails: get near one at about its height, from any angle (along it, across it, or dropping onto it), and you slide onto it and grind (come in from the side and it's a boardslide; come in along it and you ride it on your trucks; sparks either way) until you jump off (Space) or let go of Shift.

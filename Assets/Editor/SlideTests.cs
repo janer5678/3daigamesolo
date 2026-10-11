@@ -77,7 +77,7 @@ public static class SlideTests
         float board = c.Speed;
         for (int i = 0; i < 75; i++) Step(new SlideInput { forward = 1f });
         float off = c.Speed;
-        Report("walk, board, step off", walk > 5f && walk < 6f && board >= 14f && t < 1.5f && off < 6f,
+        Report("walk, board, step off", walk > c.walkSpeed - 0.5f && walk < c.walkSpeed + 0.5f && board >= 14f && t < 1.5f && off < c.walkSpeed + 0.5f,
                "walk after 0.5s: " + (walk * 3.6f).ToString("F0") + "km/h; board to " + (board * 3.6f).ToString("F0") + "km/h in " + t.ToString("F2")
                + "s; 1.5s after stepping off: " + (off * 3.6f).ToString("F0") + "km/h");
 
@@ -216,7 +216,7 @@ public static class SlideTests
         foreach (float a in new[] { 5f, 20f, 45f, 75f, -20f, -75f })
         {
             drop(690f);
-            Vector3 p = new Vector3(690f, y + 0.5f + 0.4f + 0.5f, 18f + Mathf.Sign(a) * 0.6f);   // start on the side you're coming from
+            Vector3 p = new Vector3(690f, y + 0.5f + 0.4f + 0.3f, 18f + Mathf.Sign(a) * 0.4f);   // start on the side you're coming from
             rb.position = p; c.transform.position = p;
             rb.linearVelocity = Quaternion.Euler(0f, 90f + a, 0f) * Vector3.forward * 8f;   // heading across towards the rail
             Physics.SyncTransforms();
@@ -246,42 +246,78 @@ public static class SlideTests
                + "; Space " + (jumpedOff ? "jumps off" : "didn't jump off") + "; letting go of Shift " + (steppedOff ? "steps off" : "didn't step off") + ";" + angles);
     }
 
-    // on the board, Space again in the air is a kickflip with a little extra pop (once per jump);
-    // mashing Space on take-off doesn't stack jumps; and jumping at full speed doesn't cost you speed
+    // tap Space for a jump, hold it to go higher; on the board a held jump kickflips, which pushes you
+    // forward. Mashing Space on take-off doesn't stack jumps, hopping again and again slowly builds
+    // speed, and C slides, with a higher jump out of it
     static void JumpFeel()
     {
-        Place(PlazaSpot, Vector3.zero);
-        float y0 = c.transform.position.y, single = y0;
-        Step(new SlideInput { push = true, jump = true });
-        for (int i = 0; i < 80; i++) { Step(new SlideInput { push = true }); single = Mathf.Max(single, c.transform.position.y); }
+        float y0;
+        System.Func<bool, bool, float> jumpPeak = (board, hold) =>
+        {
+            Place(PlazaSpot, Vector3.zero);
+            float start = c.transform.position.y, peak = start;
+            Step(new SlideInput { push = board, jump = true, jumpHeld = hold });
+            for (int i = 0; i < 80; i++) { Step(new SlideInput { push = board, jumpHeld = hold }); peak = Mathf.Max(peak, c.transform.position.y); }
+            return peak - start;
+        };
+        float footTap = jumpPeak(false, false), footHold = jumpPeak(false, true);
+        float boardTap = jumpPeak(true, false), boardHold = jumpPeak(true, true);
 
+        // a tap doesn't flip; holding does, and pushes you forward
+        Place(PlazaSpot, new Vector3(8f, 0f, 0f));
+        Step(new SlideInput { push = true, jump = true });
+        bool tapFlip = false;
+        for (int i = 0; i < 20; i++) { Step(new SlideInput { push = true }); tapFlip |= c.Flipping; }
+        Place(PlazaSpot, new Vector3(8f, 0f, 0f));
+        float before = c.Velocity.x;
+        Step(new SlideInput { push = true, jump = true, jumpHeld = true });
+        bool holdFlip = false; float pushed = 0f;
+        for (int i = 0; i < 20; i++) { Step(new SlideInput { push = true, jumpHeld = true }); if (!holdFlip && c.Flipping) { holdFlip = true; pushed = c.Velocity.x - before; } }
+
+        // mashing on take-off
         Place(PlazaSpot, Vector3.zero);
+        y0 = c.transform.position.y;
         float mashed = y0;
-        for (int i = 0; i < 3; i++) Step(new SlideInput { push = true, jump = true });   // three presses in a row on take-off
-        for (int i = 0; i < 80; i++) { Step(new SlideInput { push = true }); mashed = Mathf.Max(mashed, c.transform.position.y); }
+        for (int i = 0; i < 3; i++) Step(new SlideInput { push = true, jump = true });
+        for (int i = 0; i < 80; i++) { Step(new SlideInput { push = true }); mashed = Mathf.Max(mashed, y0 + 0f + (c.transform.position.y - y0)); }
 
-        Place(PlazaSpot, Vector3.zero);
-        Step(new SlideInput { push = true, jump = true });
-        for (int i = 0; i < 12; i++) Step(new SlideInput { push = true });
-        bool flipBefore = c.Flipping;
-        Step(new SlideInput { push = true, jump = true });
-        bool flipped = !flipBefore && c.Flipping;
-        float vyAfter = c.Velocity.y;
-        Step(new SlideInput { push = true, jump = true });   // a third press does nothing
-        bool onlyOnce = c.Velocity.y < vyAfter;
-        float dPeak = c.transform.position.y;
-        for (int i = 0; i < 80; i++) { Step(new SlideInput { push = true }); dPeak = Mathf.Max(dPeak, c.transform.position.y); }
+        // hop, land, hop again... on foot, holding W
+        Place(PlazaSpot, new Vector3(c.walkSpeed, 0f, 0f));
+        float hopStart = new Vector3(c.Velocity.x, 0f, c.Velocity.z).magnitude;
+        for (int hop = 0; hop < 8; hop++)
+        {
+            Step(new SlideInput { forward = 1f, jump = true });
+            for (int i = 0; i < 60; i++) { Step(new SlideInput { forward = 1f }); if (i > 5 && c.Grounded) break; }
+        }
+        float hopEnd = new Vector3(c.Velocity.x, 0f, c.Velocity.z).magnitude;
 
+        // slide: a burst of speed, momentum carried, and a higher jump out of it
+        Place(PlazaSpot, new Vector3(c.walkSpeed, 0f, 0f));
+        Step(new SlideInput { forward = 1f, slide = true });
+        bool slid = c.Sliding;
+        float slideSpeed = c.Velocity.x;
+        for (int i = 0; i < 20; i++) Step(new SlideInput { slide = true });
+        float slideLater = c.Velocity.x;
+        float sy = c.transform.position.y, slidePeak = sy;
+        Step(new SlideInput { slide = true, jump = true });
+        for (int i = 0; i < 80; i++) { Step(new SlideInput()); slidePeak = Mathf.Max(slidePeak, c.transform.position.y); }
+        float slideJump = slidePeak - sy;
+
+        // jumping at full speed doesn't cost you speed
         Place(PlazaSpot, new Vector3(21f, 0f, 0f));
-        float before = new Vector3(c.Velocity.x, 0f, c.Velocity.z).magnitude;
+        float fast = new Vector3(c.Velocity.x, 0f, c.Velocity.z).magnitude;
         Step(new SlideInput { push = true, jump = true, forward = 1f });
-        float after = new Vector3(c.Velocity.x, 0f, c.Velocity.z).magnitude;
+        float afterJump = new Vector3(c.Velocity.x, 0f, c.Velocity.z).magnitude;
 
-        bool ok = Mathf.Abs(mashed - single) < 0.6f * (single - y0) && flipped && onlyOnce && after > before - 0.5f;
-        Report("double jump kickflip, no stacked jumps, no speed lost", ok,
-               "board jump " + (single - y0).ToString("F2") + "m; mashing Space on take-off " + (mashed - y0).ToString("F2") + "m (includes the kickflip pop); "
-               + (flipped ? "Space in the air kickflips" : "no kickflip in the air") + (onlyOnce ? ", once" : ", MORE THAN ONCE") + ", double jump peaks at " + (dPeak - y0).ToString("F2") + "m"
-               + "; jumping at " + (before * 3.6f).ToString("F0") + "km/h leaves you at " + (after * 3.6f).ToString("F0") + "km/h");
+        bool ok = footHold > footTap + 0.25f && boardHold > boardTap + 0.25f && !tapFlip && holdFlip && pushed > 1.5f
+                  && mashed - y0 < boardTap + 0.1f && hopEnd > hopStart + 2f && slid && slideSpeed > c.walkSpeed + 1.5f
+                  && slideLater > c.walkSpeed && slideJump > footTap + 0.2f && afterJump > fast - 0.5f;
+        Report("hold to jump higher and kickflip, hops build speed, C slides", ok,
+               "jump on foot " + footTap.ToString("F2") + "m tapped / " + footHold.ToString("F2") + "m held; on the board " + boardTap.ToString("F2") + " / " + boardHold.ToString("F2")
+               + "m; tap " + (tapFlip ? "KICKFLIPPED" : "no flip") + ", held " + (holdFlip ? "kickflips, pushing you +" + (pushed * 3.6f).ToString("F0") + "km/h" : "NO FLIP")
+               + "; mashing Space " + (mashed - y0).ToString("F2") + "m; 8 hops on foot: " + (hopStart * 3.6f).ToString("F0") + " -> " + (hopEnd * 3.6f).ToString("F0") + "km/h"
+               + "; slide " + (slid ? "starts at " + (slideSpeed * 3.6f).ToString("F0") + "km/h, " + (slideLater * 3.6f).ToString("F0") + "km/h after 0.4s" : "DIDN'T START")
+               + ", jump out of it " + slideJump.ToString("F2") + "m; jumping at " + (fast * 3.6f).ToString("F0") + "km/h leaves you at " + (afterJump * 3.6f).ToString("F0") + "km/h");
     }
     // the ground is solid past the edge of the skateable area too: ride out there and you don't drop
     // out of the world

@@ -88,6 +88,7 @@ public static partial class SkateWorldBuilder
         Strawberries(deco, shinyMat);
         FloatingThings(deco, shinyMat);
         Planet(deco);
+        SpaceCourse(deco, shinyMat);
         Sparkles(deco);
 
         // sky
@@ -437,7 +438,7 @@ public static partial class SkateWorldBuilder
         QuarterPipe("Halfpipe west wall", Matrix4x4.TRS(new Vector3(-58f, 0f, -18f), west, Vector3.one), 30f, 3f, 2.5f);
         QuarterPipe("Halfpipe east wall", Matrix4x4.TRS(new Vector3(-44f, 0f, -18f), east, Vector3.one), 30f, 3f, 2.5f);
         // right: a big quarterpipe wall to turn round on
-        QuarterPipe("Quarterpipe wall", Matrix4x4.TRS(new Vector3(76f, 0f, -12f), east, Vector3.one), 40f, 3.5f, 3f);
+        QuarterPipe("Quarterpipe wall", Matrix4x4.TRS(new Vector3(76f, 0f, -32f), east, Vector3.one), 36f, 3.5f, 3f);   // south of the east gap, which is where the space course starts
 
         // the middle: funbox with rails, kickers, ledges, rails
         Funbox("Funbox", Matrix4x4.TRS(new Vector3(32f, 0f, -26f), north, Vector3.one), 8f);
@@ -513,7 +514,7 @@ public static partial class SkateWorldBuilder
     {
         var k = new SkateMeshKit();
         var spots = new[] { new Vector4(-72f, 0f, -52f, 3.2f), new Vector4(-64f, 0f, -60f, 2f), new Vector4(70f, 0f, 46f, 3.6f),
-                            new Vector4(-70f, 0f, 44f, 2.6f), new Vector4(74f, 0f, -44f, 2.4f) };
+                            new Vector4(-70f, 0f, 44f, 2.6f), new Vector4(74f, 0f, 30f, 2.4f) };
         foreach (var s in spots)
         {
             Strawberry(k, new Vector3(s.x, s.y, s.z), s.w, s.x * 3f);
@@ -611,6 +612,87 @@ public static partial class SkateWorldBuilder
         r.sharedMaterial = Mat("Sparks", "Sprites/Default");
     }
 
+    // ---- the space course: a parkour run of floating platforms off the east side of the island ----
+
+    static readonly Color32[] CourseCols = { new Color32(255, 196, 222, 255), new Color32(255, 240, 248, 255), new Color32(236, 206, 252, 255) };
+
+    static void CoursePlatform(Transform parent, string name, Vector3 top, float sx, float sz, int colour, bool checkpoint = false, string label = "Checkpoint")
+    {
+        var k = new SkateMeshKit();
+        Color32 col = CourseCols[colour % CourseCols.Length];
+        k.Box(top + Vector3.down * 0.6f, new Vector3(sx, 1.2f, sz), Quaternion.identity, col);
+        k.Box(top + Vector3.down * 0.2f, new Vector3(sx + 0.15f, 0.16f, sz + 0.15f), Quaternion.identity, PPinkDeep);   // pink band just under the top edge
+        k.Cone(top + Vector3.down * 1.2f, Mathf.Min(sx, sz) * 0.5f, 0f, -Mathf.Min(sx, sz) * 0.9f, 6, PLilac, 0.3f);    // a crystal hanging underneath
+        var go = Solid(name, parent, k, toonMat, true);
+        if (checkpoint) CourseCheckpoint(parent, top + new Vector3(sx * 0.5f - 0.6f, 0f, sz * 0.5f - 0.6f), top, label);
+    }
+
+    static void CourseStone(Transform parent, Vector3 top, float r, int colour)
+    {
+        var k = new SkateMeshKit();
+        k.Cylinder(top + Vector3.down * 1f, top, r, 18, CourseCols[colour % CourseCols.Length]);
+        k.Cylinder(top + Vector3.down * 0.28f, top + Vector3.down * 0.12f, r + 0.08f, 18, PPinkDeep);
+        k.Cone(top + Vector3.down * 1f, r, 0f, -r * 1.6f, 6, PLilac, 0.2f);
+        Solid("Stepping stone", parent, k, toonMat, true);
+    }
+
+    // a heart on a pole at the corner of the platform; reach the middle of the platform to save there
+    static void CourseCheckpoint(Transform parent, Vector3 pole, Vector3 centre, string label)
+    {
+        var k = new SkateMeshKit();
+        k.Cylinder(pole, pole + Vector3.up * 3.2f, 0.09f, 8, PWhite);
+        Heart(k, pole + Vector3.up * 3.6f, 1.1f, Quaternion.identity, PPinkDeep);
+        var flag = Solid("Checkpoint heart", parent, k, toonMat, false);
+        var cp = new GameObject(label);
+        cp.transform.SetParent(parent, false);
+        cp.transform.SetPositionAndRotation(centre + Vector3.up * 0.4f, Quaternion.LookRotation(Vector3.right));
+        var c = cp.AddComponent<Checkpoint>();
+        c.label = label;
+        c.radius = 4f;
+    }
+
+    static void SpaceCourse(Transform parent, Material shiny)
+    {
+        var root = new GameObject("Space course").transform;
+        root.SetParent(parent, false);
+        Quaternion east = Quaternion.LookRotation(Vector3.right);
+
+        // out of the gap in the railing, over the edge
+        CoursePlatform(root, "Course start", new Vector3(97f, 0f, 0f), 8f, 10f, 1, true, "Space course");
+        CoursePlatform(root, "Step", new Vector3(108f, 0.6f, -1f), 6f, 6f, 0);
+        CoursePlatform(root, "Step", new Vector3(118f, 1.2f, 2f), 5f, 5f, 2);
+        // a rail across the first big gap
+        Rail("Space rail", new[] { new Vector3(121f, 2.0f, 2f), new Vector3(136f, 2.0f, 2f) }, false);
+        CoursePlatform(root, "Landing", new Vector3(142f, 1.2f, 2f), 10f, 8f, 1, true);
+        // a kicker over the next gap
+        Kicker("Space kicker", Matrix4x4.TRS(new Vector3(143f, 1.2f, 2f), east, Vector3.one), 4f, 26f, 3.5f, RampSide2);
+        CoursePlatform(root, "Landing", new Vector3(153f, 1.6f, 2f), 8f, 8f, 0);
+        // stepping stones, climbing and weaving
+        CourseStone(root, new Vector3(162f, 2.2f, 2f), 2f, 2);
+        CourseStone(root, new Vector3(168f, 2.8f, -2f), 2f, 1);
+        CourseStone(root, new Vector3(174f, 3.4f, 1f), 2f, 0);
+        CourseStone(root, new Vector3(180f, 4.0f, 3f), 2f, 2);
+        CoursePlatform(root, "High platform", new Vector3(190f, 4.0f, 2f), 10f, 8f, 1, true);
+        // a long rail down, kinked twice
+        Rail("Space rail", new[] { new Vector3(195.5f, 4.8f, 2f), new Vector3(206f, 3.8f, 2f), new Vector3(218f, 2.8f, 2f) }, false);
+        CoursePlatform(root, "Low platform", new Vector3(226f, 2.0f, 2f), 12f, 8f, 0, true);
+        // a steep kicker up, then pillars climbing to the goal
+        Kicker("Space kicker", Matrix4x4.TRS(new Vector3(229f, 2.0f, 2f), east, Vector3.one), 4.5f, 35f, 3.5f, RampSide2);
+        CoursePlatform(root, "Landing", new Vector3(238f, 2.8f, 2f), 8f, 8f, 2);
+        CoursePlatform(root, "Pillar", new Vector3(246f, 3.6f, 2f), 4f, 4f, 1);
+        CoursePlatform(root, "Pillar", new Vector3(252f, 4.4f, -1f), 4f, 4f, 0);
+        CoursePlatform(root, "Pillar", new Vector3(258f, 5.2f, 2f), 4f, 4f, 2);
+        CoursePlatform(root, "Goal", new Vector3(271f, 5.2f, 2f), 14f, 14f, 1, true, "Course complete!");
+
+        // a giant spinning star over the goal
+        var k = new SkateMeshKit();
+        Star(k, Vector3.zero, 7f, Quaternion.identity, PWhite);
+        var star = Solid("Goal star", root, k, shiny, false);
+        star.transform.position = new Vector3(271f, 13f, 2f);
+        var spin = star.AddComponent<Spin>();
+        spin.degreesPerSecond = 40f;
+        spin.bob = 0.8f;
+    }
     // ---- review shots -------------------------------------------------------------------------
 
     public static void PalaceShots()
@@ -622,5 +704,7 @@ public static partial class SkateWorldBuilder
         Shot(cam, new Vector3(-30f, 6f, -40f), new Vector3(-51f, 1f, -18f), "p04-halfpipe.png");
         Shot(cam, new Vector3(0f, 3f, -20f), new Vector3(-400f, 450f, 1500f), "p05-sky.png");
         Shot(cam, new Vector3(60f, 20f, -120f), new Vector3(0f, -20f, 0f), "p06-underside.png");
+        Shot(cam, new Vector3(70f, 9f, -18f), new Vector3(180f, 2f, 2f), "p07-space-course.png");
+        Shot(cam, new Vector3(150f, 30f, -70f), new Vector3(200f, 2f, 2f), "p08-space-course-above.png");
     }
 }

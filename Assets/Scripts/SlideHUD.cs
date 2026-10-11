@@ -1,33 +1,39 @@
 using UnityEngine;
 
-// Speed, a one-line controls hint, and the faint television scanlines over everything (the same
-// 1x2 texture trick as the Pururin Room).
+// Speed, a one-line controls hint, the level's name when you arrive, the grind you're doing, and
+// short messages (checkpoints).
 public class SlideHUD : MonoBehaviour
 {
     public SlideController player;
     [Tooltip("Shown big for the first few seconds of the level.")]
     public string levelName;
-    [Tooltip("Screen pixels per scanline pair.")]
-    public float scanlinePitch = 4f;
-    [Range(0f, 1f)] public float scanlineStrength = 0.16f;
 
     static readonly Color Ink = new Color(0.17f, 0.10f, 0.29f);
     static readonly Color Cream = new Color(1f, 0.97f, 0.98f);
 
-    Texture2D scan;
+    static SlideHUD current;
     Font font;
     float hintTimer = 10f;
+    string message;
+    float messageTimer;
 
-    void Start()
+    void Awake() { current = this; }
+
+    void Start() { font = Resources.Load<Font>("Bangers"); }
+
+    // pops up a line of text in the middle of the screen for a couple of seconds
+    public static void Flash(string text)
     {
-        scan = new Texture2D(1, 2, TextureFormat.RGBA32, false) { filterMode = FilterMode.Point, wrapMode = TextureWrapMode.Repeat };
-        scan.SetPixel(0, 0, new Color(0f, 0f, 0f, scanlineStrength));
-        scan.SetPixel(0, 1, new Color(0f, 0f, 0f, 0f));
-        scan.Apply();
-        font = Resources.Load<Font>("Bangers");
+        if (current == null) return;
+        current.message = text;
+        current.messageTimer = 2.5f;
     }
 
-    void Update() { hintTimer -= Time.deltaTime; }
+    void Update()
+    {
+        hintTimer -= Time.deltaTime;
+        messageTimer -= Time.deltaTime;
+    }
 
     void Outlined(Rect r, string text, GUIStyle s, Color c)
     {
@@ -54,15 +60,15 @@ public class SlideHUD : MonoBehaviour
             Outlined(new Rect(W - 330 * k, 20 * k, 300 * k, 50 * k), Mathf.RoundToInt(player.Speed * 3.6f) + " km/h", Style(Mathf.RoundToInt(34 * k), TextAnchor.UpperRight), Cream);
         if (hintTimer > 0f)
         {
-            Outlined(new Rect(0, H - 90 * k, W, 50 * k), "WASD move    hold SHIFT to ride    SPACE jump (again in the air: kickflip)    V camera    TAB next level    R restart",
+            Outlined(new Rect(0, H - 90 * k, W, 50 * k), "WASD move    hold SHIFT to ride    SPACE jump (hold: higher, kickflip)    C slide    V camera    TAB next level    R checkpoint",
                      Style(Mathf.RoundToInt(30 * k), TextAnchor.MiddleCenter), Cream);
             if (!string.IsNullOrEmpty(levelName))
                 Outlined(new Rect(0, 60 * k, W, 90 * k), levelName, Style(Mathf.RoundToInt(72 * k), TextAnchor.MiddleCenter), Cream);
         }
+        if (messageTimer > 0f && !string.IsNullOrEmpty(message))
+            Outlined(new Rect(0, H * 0.3f, W, 80 * k), message, Style(Mathf.RoundToInt(60 * k), TextAnchor.MiddleCenter), Cream);
         // the grind you're doing, while you're on a rail (A/D switches it)
         if (player != null && player.GrindName != null)
             Outlined(new Rect(0, H * 0.62f, W, 70 * k), player.GrindName, Style(Mathf.RoundToInt(56 * k), TextAnchor.MiddleCenter), Cream);
-        if (scan != null && scanlineStrength > 0f)
-            GUI.DrawTextureWithTexCoords(new Rect(0, 0, W, H), scan, new Rect(0, 0, 1, H / scanlinePitch));
     }
 }
