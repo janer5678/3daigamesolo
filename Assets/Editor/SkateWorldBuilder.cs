@@ -60,9 +60,13 @@ public static class SkateWorldBuilder
 
     public static float RiverZ(float x) { return PathZ(x) - 52f - 6f * Mathf.Sin(x * 0.017f); }
 
+    // flat ground everywhere you can skate, for testing movement; false brings back the valley run, river and hills
+    public const bool FlatGround = true;
+
     // the long fall of the valley floor: steady down the run, flat through the plaza, up behind it
     static float Grade(float x)
     {
+        if (FlatGround) return 0f;
         if (x < -10f) return 0.07f + (-10f - x) * 0.004f;
         if (x > 880f) return -(x - 880f) * 0.006f;
         return 0.07f * (1f - Smooth(480f, 640f, x));
@@ -123,6 +127,7 @@ public static class SkateWorldBuilder
         float d = z - pz, ad = Mathf.Abs(d);
         float W = PathHalfWidth;
         float plaza = Plazaness(x);
+        if (FlatGround) return b + DistantRanges(x, z, pz);
 
         // across the run: a shallow dish you can carve, the hill rising on the left, the land
         // falling gently away to the river on the right
@@ -145,7 +150,14 @@ public static class SkateWorldBuilder
         float wild = Mathf.Max(wildA, Mathf.Max(wildB, wildC));
         h += wild * (2f + 16f * Fbm(x / 110f + 9f, z / 110f + 9f, 4));
 
-        // two ranges behind: a nearer, lower one and the big snowy one far back
+        h += DistantRanges(x, z, pz);
+        return b + h;
+    }
+
+    // two ranges behind: a nearer, lower one and the big snowy one far back
+    static float DistantRanges(float x, float z, float pz)
+    {
+        float h = 0f;
         float dv = Mathf.Abs(z - (pz - 26f));
         float ridge = Ridged(x / 200f, z / 200f, 6);
         float low  = Mathf.Max(Smooth(230f, 520f, dv), Mathf.Max(1f - Smooth(-700f, -320f, x), Smooth(1400f, 1800f, x)));
@@ -164,7 +176,7 @@ public static class SkateWorldBuilder
                 h += peakMask * p.z * Mathf.Pow(t, 1.5f) * (0.7f + 0.6f * ridge);
             }
         }
-        return b + h;
+        return h;
     }
 
     // the meadow rising off the side of the run: curving up, then a steady grassy slope
@@ -755,7 +767,7 @@ public static class SkateWorldBuilder
     // so it sits in any of the places you'll skate through: simple chunky shapes and flat colours,
     // no graphics or fine detail. Charcoal grip with a light wood edge, one accent colour on the
     // bottom, grey trucks and off-white wheels. A bit bigger than a real board so it reads well.
-    const float DeckHalfLen = 0.56f, DeckHalfWidth = 0.155f, DeckBottom = 0.14f, DeckThick = 0.032f, KickStart = 0.37f;
+    const float DeckHalfLen = 0.56f, DeckHalfWidth = 0.21f, DeckBottom = 0.14f, DeckThick = 0.032f, KickStart = 0.37f;
     static readonly Color32 BoardAccent = new Color32(236, 112, 86, 255);
 
     static float DeckHalfW(float z)
@@ -812,12 +824,12 @@ public static class SkateWorldBuilder
         {
             float tz = s * 0.3f, axle = 0.058f;
             // truck: baseplate, kingpin, and a round hanger out to the wheels
-            b.Box(new Vector3(0f, DeckBottom - 0.01f, tz), new Vector3(0.09f, 0.02f, 0.11f), Quaternion.identity, metal);
+            b.Box(new Vector3(0f, DeckBottom - 0.01f, tz), new Vector3(0.11f, 0.02f, 0.12f), Quaternion.identity, metal);
             b.Cylinder(new Vector3(0f, DeckBottom - 0.02f, tz), new Vector3(0f, axle + 0.01f, tz), 0.03f, 10, metal);
-            b.Cylinder(new Vector3(-0.12f, axle, tz), new Vector3(0.12f, axle, tz), 0.022f, 10, metal);
+            b.Cylinder(new Vector3(-0.17f, axle, tz), new Vector3(0.17f, axle, tz), 0.022f, 10, metal);
             // chunky wheels
             foreach (float w in new[] { -1f, 1f })
-                b.Cylinder(new Vector3(w * 0.1f, axle, tz), new Vector3(w * 0.155f, axle, tz), axle, 18, wheel);
+                b.Cylinder(new Vector3(w * 0.15f, axle, tz), new Vector3(w * 0.205f, axle, tz), axle, 18, wheel);
         }
         var mesh = b.Build("Board");
         SaveFeatureMesh(mesh);

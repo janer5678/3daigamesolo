@@ -56,8 +56,9 @@ public class SlideController : MonoBehaviour
     public float fastTurnRate = 450f;
     [Tooltip("How hard pressing against your direction (S) brakes on the board.")]
     public float boardBrake = 22f;
-    [Tooltip("Gravity multiplier while on the board; lower than on foot so riding feels a bit floatier.")]
-    public float boardGravityScale = 1.6f;
+    [Tooltip("Gravity multiplier while on the board. A touch lighter than on foot; the board's jump is stronger to match.")]
+    public float boardGravityScale = 2.1f;
+    public float boardJumpSpeed = 7f;
     [Tooltip("Overall speed cap, mostly reached going downhill on the board.")]
     public float maxSpeed = 22f;
 
@@ -71,7 +72,9 @@ public class SlideController : MonoBehaviour
 
     [Header("Rail lock (on the board)")]
     [Tooltip("How close (sideways) to a rail you need to be for the board to lock onto it.")]
-    public float railCatch = 0.45f;
+    public float railCatch = 0.8f;
+    [Tooltip("How far above riding height on a rail you can be and still snap down onto it.")]
+    public float railCatchAbove = 0.9f;
     [Tooltip("Slowest you grind at; you always get carried along the rail at least this fast.")]
     public float grindMinSpeed = 4f;
     [Tooltip("How quickly grinding slows you on a flat rail.")]
@@ -144,6 +147,8 @@ public class SlideController : MonoBehaviour
         transform.position = rb.position;
         rb.linearVelocity = Vector3.zero;
         grindRail = null;
+        noRailTimer = noLockTimer = 0f;
+        flip = -1f;
         Vector3 f = s.forward;
         yaw = Mathf.Atan2(f.x, f.z) * Mathf.Rad2Deg;
         pitch = 8f;
@@ -208,13 +213,20 @@ public class SlideController : MonoBehaviour
             float along = Vector3.ProjectOnPlane(v0, n0).magnitude;
             if (Physics.SphereCast(rb.position, ball.radius * 0.95f, -n0, out hit, lockReach, ~0, QueryTriggerInteraction.Ignore)
                 && Vector3.Angle(n0, hit.normal) < lockMaxBend
-                && (hit.normal.y > 0.35f || along > lockMinWallSpeed))
+                && (hit.normal.y > 0.35f || along > lockMinWallSpeed)
+                && !(n0.y < 0.5f && v0.y > 0f && hit.normal.y > n0.y + 0.05f))   // going up a wall over its lip: launch, don't wrap onto the deck
             {
                 locked = true;
                 groundNormal = hit.normal;
                 rb.position -= n0 * Mathf.Max(0f, hit.distance - 0.01f);
                 Vector3 t = Vector3.ProjectOnPlane(v0, hit.normal);
                 if (t.sqrMagnitude > 1e-4f) rb.linearVelocity = t.normalized * along;
+            }
+            else if (n0.y < 0.5f && v0.y > 0f)
+            {
+                // launching up off vert: go straight up and drift slightly back over the ramp, so you
+                // come down into it rather than landing on the deck behind
+                rb.linearVelocity = Vector3.ProjectOnPlane(v0, n0) + n0 * 0.4f;
             }
         }
         if (locked) Grounded = true;
@@ -294,8 +306,9 @@ public class SlideController : MonoBehaviour
         }
         if (inp.jump && Grounded)
         {
-            if (OnBoard && steep) v += groundNormal * jumpSpeed;   // off a wall: away from it
-            else v.y = Mathf.Max(v.y, 0f) + jumpSpeed;
+            float js = OnBoard ? boardJumpSpeed : jumpSpeed;
+            if (OnBoard && steep) v += groundNormal * js;   // off a wall: away from it
+            else v.y = Mathf.Max(v.y, 0f) + js;
             locked = false;
             noLockTimer = 0.25f;
         }
@@ -310,11 +323,17 @@ public class SlideController : MonoBehaviour
 
     float RideHeight(SkateRail r) { return r.radius + ball.radius; }
 
-    // on the board, coming over a rail at about its height: lock on and grind along it
+    // on the board, anywhere near a rail at about its height: snap onto it and grind. You can come
+    // at it from any angle: straight along it, across it, or dropping onto it from above. Your
+    // speed carries over, and you go whichever way along the rail is closer to where you're heading.
     void TryLockOntoRail()
     {
         if (rails == null) return;
         Vector3 p = rb.position, v = rb.linearVelocity;
+        // shooting up off a quarterpipe, or dropping straight back down into it: leave the coping alone
+        if (v.y > 4f || new Vector3(v.x, 0f, v.z).magnitude < 1.5f) return;
+        bool onWall = Grounded && groundNormal.y < 0.7f;
+        SkateRail best = null; int bestSeg = 0; float bestU = 0f, bestD = float.MaxValue;
         foreach (var r in rails)
         {
             if (r == null || r.points == null || r.points.Length < 2) continue;
@@ -326,16 +345,23 @@ public class SlideController : MonoBehaviour
             Vector3 side = off - dir * Vector3.Dot(off, dir);
             float above = side.y - RideHeight(r);
             side.y = 0f;
-            if (side.magnitude > railCatch || above < -0.3f || above > 0.45f) continue;
-            float along = Vector3.Dot(v, dir);
-            if (Mathf.Abs(along) < 1.5f || v.y > 2.5f) continue;                 // going across it or still rising
-            grindRail = r; grindSeg = seg; grindU = u;
-            grindSpeed = Mathf.Sign(along) * Mathf.Max(Mathf.Abs(along), grindMinSpeed);
-            locked = false;
-            return;
+            if (side.magnitude > railCatch || above < -0.3f || above > railCatchAbove) continue;
+            if (onWall && Mathf.Abs(Vector3.Dot(v, dir)) < 1.5f) continue;       // riding straight up a quarterpipe past its coping
+            float d = side.sqrMagnitude + above * above;
+            if (d < bestD) { bestD = d; best = r; bestSeg = seg; bestU = u; }
         }
-    }
+        if (best == null) return;
 
+        Vector3 rd = (best.points[bestSeg + 1] - best.points[bestSeg]).normalized;
+        Vector3 flatV = new Vector3(v.x, 0f, v.z);
+        Vector3 heading = flatV.magnitude > 1f ? flatV : Quaternion.Euler(0f, yaw, 0f) * Vector3.forward;
+        float sign = Vector3.Dot(heading, rd) >= 0f ? 1f : -1f;
+        // keep most of your speed even coming in at an angle
+        float speed = Mathf.Max(Mathf.Abs(Vector3.Dot(v, rd)), flatV.magnitude * 0.8f, grindMinSpeed);
+        grindRail = best; grindSeg = bestSeg; grindU = bestU;
+        grindSpeed = sign * speed;
+        locked = false;
+    }
     // one step along the rail; false when you've come off it
     bool Grind(SlideInput inp, float dt)
     {
@@ -346,7 +372,7 @@ public class SlideController : MonoBehaviour
         {
             // let go of Shift to step off, or jump off with Space, keeping your speed along the rail
             Vector3 v = dir * grindSpeed;
-            if (inp.jump) { v.y = Mathf.Max(v.y, 0f) + jumpSpeed; noLockTimer = 0.25f; }
+            if (inp.jump) { v.y = Mathf.Max(v.y, 0f) + boardJumpSpeed; noLockTimer = 0.25f; }
             LeaveRail(v);
             return !inp.push ? false : true;
         }

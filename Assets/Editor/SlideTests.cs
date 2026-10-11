@@ -206,9 +206,27 @@ public static class SlideTests
         Step(new SlideInput());
         bool steppedOff = wasOn && !c.Grinding;
 
-        Report("board locks onto rails", rodeToEnd && jumpedOff && steppedOff,
+        // coming at it from an angle, or straight across, it still snaps on and carries you along it
+        string angles = "";
+        bool allAngles = true;
+        foreach (float a in new[] { 45f, 90f })
+        {
+            drop(690f);
+            Vector3 p = new Vector3(690f, y + 0.5f + 0.4f + 0.5f, 18.15f + 0.6f);
+            rb.position = p; c.transform.position = p;
+            rb.linearVelocity = Quaternion.Euler(0f, 90f + a, 0f) * Vector3.forward * 8f;   // heading across towards the rail
+            Physics.SyncTransforms();
+            bool caught = false;
+            for (int i = 0; i < 40 && !caught; i++) { Step(new SlideInput { push = true }); caught = c.Grinding; }
+            for (int i = 0; i < 10 && c.Grinding; i++) Step(new SlideInput { push = true });
+            bool along = caught && Mathf.Abs(c.transform.position.z - 18f) < 0.05f && Mathf.Abs(c.Velocity.x) > 3f;
+            allAngles &= along;
+            angles += " " + a.ToString("F0") + " degrees: " + (along ? "snapped on, grinding at " + (Mathf.Abs(c.Velocity.x) * 3.6f).ToString("F0") + "km/h" : "missed") + ";";
+        }
+
+        Report("board locks onto rails", rodeToEnd && jumpedOff && steppedOff && allAngles,
                (caughtAt >= 0f ? "locked on after " + caughtAt.ToString("F2") + "s and ground to x=" + lastX.ToString("F1") + " (rail ends at 700)" : "never locked on")
-               + "; Space " + (jumpedOff ? "jumps off" : "didn't jump off") + "; letting go of Shift " + (steppedOff ? "steps off" : "didn't step off"));
+               + "; Space " + (jumpedOff ? "jumps off" : "didn't jump off") + "; letting go of Shift " + (steppedOff ? "steps off" : "didn't step off") + ";" + angles);
     }
 
     // a modest hop, and you can still change direction mid-air
@@ -220,13 +238,13 @@ public static class SlideTests
         for (int i = 0; i < 80; i++) { Step(new SlideInput()); peak = Mathf.Max(peak, c.transform.position.y); }
         float height = peak - y0;
 
-        // on the board it's a bit floatier: higher and longer
+        // on the board you jump higher
         Place(PlazaSpot, Vector3.zero);
         y0 = c.transform.position.y; float boardPeak = y0, hang = 0f;
         Step(new SlideInput { push = true, jump = true });
         while (!c.Grounded && hang < 3f || hang < 0.1f) { Step(new SlideInput { push = true }); hang += Dt; boardPeak = Mathf.Max(boardPeak, c.transform.position.y); }
         float boardHeight = boardPeak - y0;
-        Report("board is floatier than on foot", boardHeight > height + 0.15f && boardHeight < 1.6f,
+        Report("board jumps higher than on foot", boardHeight > height + 0.15f && boardHeight < 1.6f,
                "on foot " + height.ToString("F2") + "m; on the board " + boardHeight.ToString("F2") + "m with " + hang.ToString("F2") + "s in the air");
 
         Place(PlazaSpot, new Vector3(11f, 0f, 0f));
