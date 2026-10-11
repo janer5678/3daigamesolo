@@ -38,8 +38,11 @@ public class SlideController : MonoBehaviour
     public float stopDecel = 14f;
     [Tooltip("Degrees per second your speed turns when you're going faster than you could push.")]
     public float fastTurnRate = 240f;
-    public float airAccel = 8f;
-    public float jumpSpeed = 5.5f;
+    [Tooltip("How quickly you can change direction in the air. Nothing pressed keeps your momentum.")]
+    public float airAccel = 24f;
+    [Tooltip("Degrees per second you can turn fast momentum in the air.")]
+    public float airTurnRate = 160f;
+    public float jumpSpeed = 4f;
     public float maxSpeed = 30f;
 
     public float yaw, pitch;
@@ -145,7 +148,18 @@ public class SlideController : MonoBehaviour
                 vT = Vector3.MoveTowards(vT, wish * top, groundAccel * dt);
             v = vT + vN;
         }
-        else v += wish * airAccel * dt;
+        else if (wish.sqrMagnitude > 0.01f)
+        {
+            // in the air: steer almost like on the ground, but let go and you keep your momentum
+            Vector3 vH = new Vector3(v.x, 0f, v.z);
+            Vector3 wishH = new Vector3(wish.x, 0f, wish.z).normalized * wish.magnitude;
+            float top = inp.push ? pushSpeed : runSpeed;
+            if (vH.magnitude > top && Vector3.Dot(vH, wishH) > 0f)
+                vH = Vector3.RotateTowards(vH, wishH * vH.magnitude, airTurnRate * Mathf.Deg2Rad * dt, 0f);
+            else
+                vH = Vector3.MoveTowards(vH, wishH * top, airAccel * dt);
+            v.x = vH.x; v.z = vH.z;
+        }
         if (inp.jump && Grounded) v.y = Mathf.Max(v.y, 0f) + jumpSpeed;
         rb.linearVelocity = v;
 

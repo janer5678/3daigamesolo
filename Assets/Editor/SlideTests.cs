@@ -23,6 +23,7 @@ public static class SlideTests
             Coast();
             PushDownTheRun();
             StopsOnTheFlat();
+            JumpAndAirControl();
         }
         finally
         {
@@ -108,5 +109,24 @@ public static class SlideTests
         float x0 = c.transform.position.x, t = 0f;
         while (c.Speed > 0.3f && t < 10f) { Step(new SlideInput()); t += Dt; }
         Report("stops when you let go", t < 2.5f, "from 72km/h: stopped in " + t.ToString("F2") + "s over " + (c.transform.position.x - x0).ToString("F1") + "m");
+    }
+
+    // a modest hop, and you can still change direction mid-air
+    static void JumpAndAirControl()
+    {
+        Place(PlazaSpot, Vector3.zero);
+        float y0 = c.transform.position.y, peak = y0;
+        Step(new SlideInput { jump = true });
+        for (int i = 0; i < 80; i++) { Step(new SlideInput()); peak = Mathf.Max(peak, c.transform.position.y); }
+        float height = peak - y0;
+
+        Place(PlazaSpot, new Vector3(11f, 0f, 0f));
+        Step(new SlideInput { forward = 1f, jump = true });
+        float air = 0f;
+        while (!c.Grounded && air < 2f || air < 0.1f) { Step(new SlideInput { strafe = 1f }); air += Dt; }
+        Vector3 v = c.Velocity; v.y = 0f;
+        float turned = Vector3.Angle(Vector3.right, v);
+        Report("jump height and air control", height > 0.6f && height < 1.0f && turned > 30f,
+               "jump height " + height.ToString("F2") + "m; holding D through a " + air.ToString("F2") + "s jump turned you " + turned.ToString("F0") + " degrees");
     }
 }
