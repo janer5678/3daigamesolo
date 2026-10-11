@@ -24,6 +24,7 @@ public static class SlideTests
             PushDownTheRun();
             StopsOnTheFlat();
             JumpAndAirControl();
+            BoardControl();
         }
         finally
         {
@@ -115,6 +116,22 @@ public static class SlideTests
         float x0 = c.transform.position.x, t = 0f;
         while (c.Speed > 0.3f && t < 10f) { Step(new SlideInput()); t += Dt; }
         Report("stops when you let go", t < 2.5f, "from 72km/h: stopped in " + t.ToString("F2") + "s over " + (c.transform.position.x - x0).ToString("F1") + "m");
+    }
+
+    // on the board at full push you can carve a sharp turn without losing speed, and S brakes
+    static void BoardControl()
+    {
+        Place(PlazaSpot, new Vector3(15f, 0f, 0f));   // yaw 90: facing +x
+        float t = 0f;
+        while (Vector3.Angle(Vector3.right, new Vector3(c.Velocity.x, 0f, c.Velocity.z)) < 85f && t < 3f)
+        { Step(new SlideInput { push = true, strafe = -1f }); t += Dt; }   // A: turn left
+        float kept = c.Speed;
+
+        Place(PlazaSpot, new Vector3(15f, 0f, 0f));
+        float b = 0f;
+        while (c.Speed > 1f && b < 5f) { Step(new SlideInput { push = true, forward = -1f }); b += Dt; }
+        Report("board steering and braking", t < 0.5f && kept > 13f && b < 1f,
+               "90 degree turn at 54km/h in " + t.ToString("F2") + "s, still " + (kept * 3.6f).ToString("F0") + "km/h; S stops you in " + b.ToString("F2") + "s");
     }
 
     // a modest hop, and you can still change direction mid-air

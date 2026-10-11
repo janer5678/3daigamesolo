@@ -12,7 +12,7 @@ First person. You walk by default; **hold Shift to ride the board** (it appears 
 |---|---|
 | **Mouse** | look |
 | **WASD** | walk (about 20 km/h, snappy) |
-| **Shift** (hold) | ride the board: builds to about 54 km/h, keeps downhill speed (capped about 79 km/h); Shift alone rolls you forward |
+| **Shift** (hold) | ride the board: builds to about 54 km/h, keeps downhill speed (capped about 79 km/h); Shift alone rolls you forward; A/D carve sharp turns without losing speed, S brakes |
 | **Space** | jump (a short hop; you can steer in the air with WASD) |
 | **R** | back to the start |
 | **Esc / click** | free / recapture the mouse |

@@ -41,8 +41,12 @@ public class SlideController : MonoBehaviour
     public float boardAccel = 12f;
     [Tooltip("With nothing else pressed, how quickly the board slows you.")]
     public float boardRollDecel = 2f;
+    [Tooltip("Degrees per second you can turn on the board at pushing speed.")]
+    public float boardTurnRate = 300f;
     [Tooltip("Degrees per second downhill speed turns when you're going faster than you can push.")]
-    public float fastTurnRate = 150f;
+    public float fastTurnRate = 220f;
+    [Tooltip("How hard pressing against your direction (S) brakes on the board.")]
+    public float boardBrake = 22f;
     [Tooltip("Gravity multiplier while on the board; lower than on foot so riding feels a bit floatier.")]
     public float boardGravityScale = 1.6f;
     [Tooltip("Overall speed cap, mostly reached going downhill on the board.")]
@@ -165,10 +169,24 @@ public class SlideController : MonoBehaviour
             }
             else if (wish.sqrMagnitude < 0.01f)
                 vT = Vector3.MoveTowards(vT, Vector3.zero, boardRollDecel * dt);
-            else if (vT.magnitude > top && Vector3.Dot(vT, wish) > 0f)
-                vT = Vector3.RotateTowards(vT, wish * vT.magnitude, fastTurnRate * Mathf.Deg2Rad * dt, 0f);   // keep downhill speed, just steer it
             else
-                vT = Vector3.MoveTowards(vT, wish * top, boardAccel * dt);
+            {
+                float s = vT.magnitude;
+                float along = s > 0.5f ? Vector3.Dot(vT / s, wish.normalized) : 1f;
+                if (along < -0.5f)
+                    vT = Vector3.MoveTowards(vT, Vector3.zero, boardBrake * dt);   // pressing against your direction (S): brake
+                else if (s < 1f)
+                    vT = Vector3.MoveTowards(vT, wish * top, boardAccel * dt);
+                else
+                {
+                    // steer: swing your velocity round towards where you're pressing, keeping the speed,
+                    // then push it up towards board speed (speed over that, from downhill, is kept)
+                    float rate = s > top ? fastTurnRate : boardTurnRate;
+                    Vector3 dir = Vector3.RotateTowards(vT / s, wish.normalized, rate * Mathf.Deg2Rad * dt, 0f);
+                    if (s < top * wish.magnitude) s = Mathf.MoveTowards(s, top * wish.magnitude, boardAccel * dt);
+                    vT = dir * s;
+                }
+            }
             v = vT + vN;
         }
         else if (wish.sqrMagnitude > 0.01f)
