@@ -57,7 +57,9 @@ public class SlideController : MonoBehaviour
     [Tooltip("Speed over running pace from hopping bleeds off this slowly while you keep going the same way.")]
     public float overspeedDecel = 8f;
     [Tooltip("Overall speed cap along the ground.")]
-    public float maxSpeed = 24f;
+    public float maxSpeed = 32f;
+    [Tooltip("How hard a rocket car's explosion throws you upward.")]
+    public float explodeFling = 16f;
 
     [Header("Jumping")]
     public float jumpSpeed = 8.4f;
@@ -184,6 +186,9 @@ public class SlideController : MonoBehaviour
     bool carrying;         // stepped off (right click): carrying the board, right click again to drop back on
 
     SkateRail[] rails;
+    Updraft[] updrafts;
+    float shake;           // camera shake left, after an explosion
+    float bounceBlock;     // just bounced: don't bounce again off the same thing straight away
     SkateRail grindRail;   // the rail you're grinding, if any
     int grindSeg, grindStyle = 4;
     float grindU, grindSpeed, noRailTimer, lastStrafe;
@@ -199,6 +204,7 @@ public class SlideController : MonoBehaviour
         if (rider != null) { body = rider.Find("Body"); legL = rider.Find("Leg L"); legR = rider.Find("Leg R"); }
         if (board != null && boardHome == Vector3.zero) { boardHome = board.position; boardHomeRot = board.rotation; }
         rails = Object.FindObjectsByType<SkateRail>(FindObjectsSortMode.None);
+        updrafts = Object.FindObjectsByType<Updraft>(FindObjectsSortMode.None);
     }
 
     void Start()
@@ -222,6 +228,7 @@ public class SlideController : MonoBehaviour
         sinceGrounded = 1f;
         slideJumpTimer = 0f;
         if (piloting != null) { piloting.Release(); piloting = null; }
+        noPilotTimer = 0f;
         flip = -1f;
         grindRail = null;
         noRailTimer = 0f;
@@ -298,6 +305,19 @@ public class SlideController : MonoBehaviour
                 return;
             }
             piloting.Fly(inp, yaw, dt);
+            if (piloting.Exploded)
+            {
+                // boom: thrown up and on, the way it was going
+                Vector3 flung = piloting.Velocity * 0.7f + Vector3.up * explodeFling;
+                piloting = null;
+                noPilotTimer = 1f;
+                rb.linearVelocity = flung;
+                shake = 0.6f;
+                SlideHUD.Flash("BOOM");
+                StartJump();
+                holdingJump = false;
+                return;
+            }
             Vector3 seat = piloting.SeatPosition + Vector3.up * ball.radius;
             rb.position = seat; transform.position = seat;
             rb.linearVelocity = piloting.Velocity - Physics.gravity * dt;
@@ -309,6 +329,7 @@ public class SlideController : MonoBehaviour
         Grounded = Physics.SphereCast(rb.position + Vector3.up * CastBack, ball.radius * 0.95f, Vector3.down, out hit, 0.12f + CastBack, ~0, QueryTriggerInteraction.Ignore)
                    && hit.normal.y > 0.35f;
         groundNormal = Grounded ? hit.normal : Vector3.up;
+        Collider groundCol = Grounded ? hit.collider : null;   // what you're standing on (for pads and bouncers)
         // a hard landing can sink you into the ground for a step: put you straight back on top, so the
         // camera doesn't dip and the next jump isn't lost
         float sunk = Grounded ? CastBack - hit.distance - ball.radius * 0.05f : 0f;
@@ -479,6 +500,39 @@ public class SlideController : MonoBehaviour
             }
             else holdingJump = false;
         }
+
+        // boost pads, bounce pads and updrafts
+        bounceBlock -= dt;
+        if (groundCol != null)
+        {
+            var pad = groundCol.GetComponent<BoostPad>();
+            if (pad != null)
+            {
+                // shot off along the arrow, at least the pad's speed
+                Vector3 dir = new Vector3(pad.direction.x, 0f, pad.direction.z).normalized;
+                float s = Mathf.Max(pad.speed, Vector3.Dot(new Vector3(v.x, 0f, v.z), dir));
+                v = new Vector3(dir.x * s, v.y, dir.z * s);
+            }
+            var bouncer = groundCol.GetComponent<Bouncer>();
+            if (bouncer != null && bounceBlock <= 0f)
+            {
+                v.y = bouncer.speed;
+                bounceBlock = 0.3f;
+                sinceGrounded = 1f;
+                StartJump();
+                holdingJump = false;
+            }
+        }
+        if (updrafts != null)
+            foreach (var u in updrafts)
+            {
+                if (u == null || !u.Contains(rb.position)) continue;
+                // carried up the column; easing off near the top so you can step off onto whatever's there
+                float target = rb.position.y > u.Top - 3f ? u.lift * 0.4f : u.lift;
+                v.y = Mathf.MoveTowards(v.y, target, 80f * dt);
+                sinceGrounded = 1f;
+                break;
+            }
         rb.linearVelocity = v;
 
         // the speed cap is on how fast you're going along the ground, so jumping never eats your speed
@@ -737,6 +791,8 @@ public class SlideController : MonoBehaviour
             Quaternion view = Quaternion.Euler(pitch, yaw, 0f);
             eyeDrop = Mathf.Lerp(eyeDrop, sliding ? 0.65f : 0f, 1f - Mathf.Exp(-12f * dt));
             Vector3 eye = transform.position + visualOffset + Vector3.up * (eyeHeight - ball.radius - eyeDrop + (OnBoard ? 0.2f : 0f));
+            shake = Mathf.Max(0f, shake - dt);
+            if (shake > 0f) eye += Random.insideUnitSphere * shake * 0.5f;
             if (thirdPerson)
             {
                 // orbit behind you, pulled in if something's in the way

@@ -36,6 +36,14 @@ public static partial class SkateWorldBuilder
     static Transform akRoot, akCol;
     static readonly List<Vector3> akAnchors = new List<Vector3>();   // balcony and roof-edge points rails can join up
     static readonly List<Vector3> akNoStall = new List<Vector3>();   // pavement kept clear: side sign, z from, z to
+    static readonly List<(Rect, float, float)> akLots = new List<(Rect, float, float)>();   // main-street buildings: lot, height, which way they face
+    static readonly List<Vector2> akReserved = new List<Vector2>();  // stretches of the street (z from, z to) the bridges use
+
+    static bool Reserved(float z, float margin = 4f)
+    {
+        foreach (var r in akReserved) if (z > r.x - margin && z < r.y + margin) return true;
+        return false;
+    }
 
     static float AR(float a, float b) { return a + (float)ark.NextDouble() * (b - a); }
     static int AI(int a, int b) { return ark.Next(a, b); }
@@ -208,8 +216,14 @@ public static partial class SkateWorldBuilder
         featureFile = null;
         featureAsset = Folder + "/AkibaFeatures.asset";
         if (AssetDatabase.LoadMainAssetAtPath(featureAsset) != null) AssetDatabase.DeleteAsset(featureAsset);
-        keepClear.Clear(); akKits.Clear(); akMats.Clear(); akAnchors.Clear(); akNoStall.Clear();
+        keepClear.Clear(); akKits.Clear(); akMats.Clear(); akAnchors.Clear(); akNoStall.Clear(); akLots.Clear(); akReserved.Clear();
         akNoStall.Add(new Vector3(1f, -440f, -400f));   // the route's kicker and rail on the east pavement
+        foreach (var bz in BridgeZ)
+        {
+            // the footbridges' ramps run along the pavements: keep them clear
+            akReserved.Add(new Vector2(bz - 24f, bz + 24f));
+            akNoStall.Add(new Vector3(1f, bz - 24f, bz + 24f)); akNoStall.Add(new Vector3(-1f, bz - 24f, bz + 24f));
+        }
         ark = new System.Random(19990629);
         floorAt = (x, z) => Mathf.Abs(x) > Road && Mathf.Abs(x) < Front + 0.5f ? Kerb : 0f;
         ImportAkibaTextures();
@@ -245,6 +259,7 @@ public static partial class SkateWorldBuilder
         AkRailway();
         AkBuildings();
         AkSideStreets();
+        AkFlow();
         AkMedian();
         AkRoute();
         AkCurvyRails();
@@ -462,6 +477,8 @@ public static partial class SkateWorldBuilder
     static readonly Rect E6Lot = Rect.MinMaxRect(Front, 360f, Front + 34f, 420f);
     const float EaH = 22f, W1H = 90f, E2H = 150f, W3H = 180f, E4H = 210f, W5H = 160f, E6H = 130f;
     static readonly List<(Rect, float)> akSkyscrapers = new List<(Rect, float)>();
+    static readonly float[] BridgeZ = { -250f, -100f, 60f, 240f, 440f };
+    static float VentZ(Rect lot) { return Reserved(lot.center.y + 8f, 6f) ? lot.center.y - 8f : lot.center.y + 8f; }
 
     static void AkBuildings()
     {
@@ -469,6 +486,8 @@ public static partial class SkateWorldBuilder
         AkTower(EaLot, EaH, -1f, false);
         foreach (var t in new[] { (W1Lot, W1H, 1f), (E2Lot, E2H, -1f), (W3Lot, W3H, 1f), (E4Lot, E4H, -1f), (W5Lot, W5H, 1f), (E6Lot, E6H, -1f) })
         {
+            float vz = VentZ(t.Item1);
+            akNoStall.Add(new Vector3(-t.Item3, vz - 4f, vz + 4f));   // the updraft vent in front
             AkTower(t.Item1, t.Item2, t.Item3, true);
             akSkyscrapers.Add((t.Item1, t.Item2));
         }
@@ -513,7 +532,8 @@ public static partial class SkateWorldBuilder
         FrontWall(sk, new Vector3(lot.center.x, 0f, lot.yMax), Vector3.forward, lot.width, 0f, h, tu, tv);
         FrontWall(sk, new Vector3(face < 0 ? lot.xMax : lot.xMin, 0f, lot.center.y), -n, w, 0f, h, tu, tv);
         AK("roof").Ground(lot.xMin, lot.yMin, lot.xMax, lot.yMax, h, 8f, 12f);
-        AkParapet(lot, h, face);
+        AkParapet(lot, h, face, false);
+        akLots.Add((lot, h, face));
 
         // an LED ticker across the shopfront, sign bands, signs sticking out
         AK("led_" + AI(0, 3), "s").Panel(new Vector3(fx + face * 0.12f, 3.85f, lot.center.y), Rt(n) * (w / 2f - 0.3f), Vector3.up * 0.22f, null, false, new Rect(0f, 0f, w / 6.4f, 1f));
@@ -561,7 +581,7 @@ public static partial class SkateWorldBuilder
         if (tall) akAnchors.Add(new Vector3(fx, h, lot.center.y));
     }
 
-    static void AkParapet(Rect lot, float h, float face)
+    static void AkParapet(Rect lot, float h, float face, bool ends = true)
     {
         var mk = AK("concrete");
         Vector3[] c = { new Vector3(lot.xMin, 0f, lot.yMin), new Vector3(lot.xMax, 0f, lot.yMin), new Vector3(lot.xMax, 0f, lot.yMax), new Vector3(lot.xMin, 0f, lot.yMax) };
@@ -569,6 +589,7 @@ public static partial class SkateWorldBuilder
         {
             Vector3 a = c[i], b = c[(i + 1) % 4];
             if (face != 0f && Mathf.Abs(a.x - b.x) < 0.01f && Mathf.Abs(a.x - (face < 0 ? lot.xMin : lot.xMax)) < 0.01f) continue;   // street side open
+            if (!ends && Mathf.Abs(a.z - b.z) < 0.01f) continue;   // ends open too: ride on from roof to roof
             Vector3 d = (b - a).normalized, inward = Vector3.Cross(Vector3.up, d);
             Vector3 mid = (a + b) / 2f + inward * 0.15f + Vector3.up * (h + 0.3f);
             Quaternion q = Quaternion.LookRotation(d);
@@ -592,12 +613,24 @@ public static partial class SkateWorldBuilder
             {
                 // a stall with a lit front and a flat roof (a ledge to ride onto), and a bank up to it
                 float sw = AR(3f, 4.5f);
+                if (ark.NextDouble() < 0.4 && z + 7.4f + sw < lot.yMax)
+                {
+                    // a bank up from the pavement onto the stall's roof
+                    Wedge("shutter", new Vector3(fx + face * 1.6f, Kerb, z), Vector3.forward, 7f, 2.8f, 2.6f);
+                    z += 7.2f;
+                }
                 Vector3 c = new Vector3(fx + face * 1.4f, 1.3f + Kerb, z + sw / 2f);
                 AK("concrete").Box(c, new Vector3(2.8f, 2.6f, sw), Quaternion.identity, 3f, 3f, null, false);
                 AK("shop_" + AI(0, 8), "e").Panel(c + n * 1.52f, Rt(n) * sw / 2f, Vector3.up * 1.2f);
                 AK("roof").Box(c + Vector3.up * 1.4f + n * 0.4f, new Vector3(3.8f, 0.2f, sw + 0.2f), Quaternion.identity, 3f, 3f);
                 AkBox(c + Vector3.up * 0.1f, new Vector3(2.8f, 2.8f, sw));
-                AkBox(c + Vector3.up * 1.4f + n * 0.4f, new Vector3(3.8f, 0.2f, sw + 0.2f));
+                var roofCol = AddBox(akCol, "Stall roof", c + Vector3.up * 1.4f + n * 0.4f, new Vector3(3.8f, 0.2f, sw + 0.2f));
+                if (ark.NextDouble() < 0.25)
+                {
+                    // a springy awning: stretched pink canvas that bounces you up to the balconies
+                    roofCol.gameObject.AddComponent<Bouncer>().speed = 17f;
+                    AK("white", "e").Box(c + Vector3.up * 1.56f + n * 0.4f, new Vector3(3.7f, 0.06f, sw + 0.1f), Quaternion.identity, 1f, 1f, new Color32(255, 110, 190, 255));
+                }
                 z += sw + 0.3f;
             }
             else if (kind < 0.75f)
@@ -725,13 +758,215 @@ public static partial class SkateWorldBuilder
         akAnchors.Add(new Vector3(lot.center.x, h, fz));
     }
 
+    // ---- the flow: things that throw you from one place to the next -----------------------------------
+
+    // a glowing arrow on the ground that shoots you off the way it points
+    static void BoostArrow(Vector3 at, Vector3 dir, float speed)
+    {
+        dir = new Vector3(dir.x, 0f, dir.z).normalized;
+        Vector3 side = Rt(dir);
+        var k = AK("white", "e");
+        k.Box(at + Vector3.up * 0.03f, new Vector3(2.4f, 0.04f, 3.2f), Quaternion.LookRotation(dir), 1f, 1f, new Color32(20, 40, 70, 255));
+        for (int i = 0; i < 3; i++)
+        {
+            Vector3 c = at + dir * (i - 1f) * 0.95f + Vector3.up * 0.07f;
+            // a chevron: two bars meeting at the front
+            foreach (var s in new[] { -1f, 1f })
+                k.Box(c + side * s * 0.45f, new Vector3(0.22f, 0.04f, 1.1f), Quaternion.LookRotation(dir + side * s * 0.9f), 1f, 1f, new Color32(60, 240, 255, 255));
+        }
+        var col = AddBox(akCol, "Boost pad", at + Vector3.up * 0.03f, new Vector3(2.4f, 0.06f, 3.2f), Quaternion.LookRotation(dir));
+        var pad = col.gameObject.AddComponent<BoostPad>();
+        pad.direction = dir; pad.speed = speed;
+    }
+
+    // a giant capsule toy, half clear and half coloured: land on it and it bounces you high
+    static void Capsule(Vector3 at, float r)
+    {
+        var k = new SkateMeshKit();
+        Color32 col = new[] { new Color32(255, 70, 160, 255), new Color32(60, 230, 255, 255), new Color32(255, 214, 40, 255), new Color32(140, 255, 120, 255) }[AI(0, 4)];
+        Vector3 c = at + Vector3.up * r * 0.85f;
+        k.Ellipsoid(c, new Vector3(r, r * 0.85f, r), Quaternion.identity, 14, 10, col);
+        k.Box(c, new Vector3(r * 2.02f, 0.12f, r * 2.02f), Quaternion.identity, new Color32(255, 255, 255, 255));
+        k.Ellipsoid(c + Vector3.up * r * 0.25f + new Vector3(-r * 0.3f, 0f, -r * 0.3f), Vector3.one * r * 0.18f, Quaternion.identity, 8, 5, new Color32(255, 255, 255, 255));
+        var mesh = k.Build("Capsule");
+        SaveFeatureMesh(mesh);
+        MeshObject("Capsule", akRoot, mesh, AkMat("white", "e"), outlineMat);
+        var sc = new GameObject("Capsule").AddComponent<SphereCollider>();
+        sc.transform.SetParent(akCol, false);
+        sc.transform.position = c; sc.radius = r * 0.9f;
+        sc.gameObject.AddComponent<Bouncer>().speed = 21f;
+    }
+
+    // a vent with a column of air blowing up out of it, steam rising
+    static void Vent(Vector3 at, float height, float radius = 2f)
+    {
+        var k = AK("metal");
+        k.Box(at + Vector3.up * 0.12f, new Vector3(radius * 1.6f, 0.24f, radius * 1.6f), Quaternion.identity, 1f, 1f);
+        for (float x = -radius * 0.6f; x <= radius * 0.6f; x += 0.4f)
+            AK("white", "e").Box(at + new Vector3(x, 0.25f, 0f), new Vector3(0.08f, 0.02f, radius * 1.4f), Quaternion.identity, 1f, 1f, new Color32(60, 240, 255, 255));
+        AkBox(at + Vector3.up * 0.12f, new Vector3(radius * 1.6f, 0.24f, radius * 1.6f));
+        var go = new GameObject("Updraft", typeof(Updraft), typeof(ParticleSystem));
+        go.transform.SetParent(akRoot, false);
+        go.transform.position = at;
+        var u = go.GetComponent<Updraft>();
+        u.radius = radius; u.height = height; u.lift = Mathf.Clamp(height * 0.7f, 14f, 30f);
+        var ps = go.GetComponent<ParticleSystem>();
+        ps.Stop(true, ParticleSystemStopBehavior.StopEmittingAndClear);
+        var main = ps.main;
+        main.loop = true; main.playOnAwake = true; main.prewarm = true;
+        main.startLifetime = Mathf.Min(4f, height / 10f);
+        main.startSpeed = new ParticleSystem.MinMaxCurve(8f, 12f);
+        main.startSize = new ParticleSystem.MinMaxCurve(0.4f, 1.2f);
+        main.startColor = new ParticleSystem.MinMaxGradient(new Color(0.75f, 0.95f, 1f, 0.35f), new Color(1f, 1f, 1f, 0.2f));
+        main.simulationSpace = ParticleSystemSimulationSpace.World;
+        main.maxParticles = 300;
+        var em = ps.emission; em.rateOverTime = 40f;
+        var shape = ps.shape; shape.shapeType = ParticleSystemShapeType.Circle; shape.radius = radius * 0.8f;
+        shape.rotation = new Vector3(-90f, 0f, 0f);
+        var fade = ps.colorOverLifetime; fade.enabled = true;
+        var grad = new Gradient();
+        grad.SetKeys(new[] { new GradientColorKey(Color.white, 0f), new GradientColorKey(Color.white, 1f) },
+                     new[] { new GradientAlphaKey(0.6f, 0f), new GradientAlphaKey(0f, 1f) });
+        fade.color = grad;
+        go.GetComponent<ParticleSystemRenderer>().sharedMaterial = Mat("Sparks", "Sprites/Default");
+    }
+
+    // a pedestrian bridge over the main street (a classic Japanese one: pale green steel), with ramps
+    // down to the pavement either side, and railings to grind
+    static void FootBridge(float z)
+    {
+        float y = 6f, half = 1.6f, x1 = Road + 3.2f;
+        Color32 green = new Color32(150, 210, 180, 255);
+        AK("white").Box(new Vector3(0f, y - 0.25f, z), new Vector3(x1 * 2f + 2.8f, 0.5f, half * 2f), Quaternion.identity, 1f, 1f, green, true, true);
+        AkBox(new Vector3(0f, y - 0.25f, z), new Vector3(x1 * 2f + 2.8f, 0.5f, half * 2f));
+        // ads along both sides
+        foreach (var s in new[] { -1f, 1f })
+        {
+            AK("billboard_" + AI(0, 10), "e").Panel(new Vector3(-6f, y - 0.9f, z + s * (half + 0.05f)), Rt(new Vector3(0f, 0f, s)) * 5f, Vector3.up * 0.7f);
+            AK("billboard_" + AI(0, 10), "e").Panel(new Vector3(6f, y - 0.9f, z + s * (half + 0.05f)), Rt(new Vector3(0f, 0f, s)) * 5f, Vector3.up * 0.7f);
+            AK("white").Box(new Vector3(0f, y - 0.9f, z + s * half), new Vector3(x1 * 2f, 1.4f, 0.06f), Quaternion.identity, 1f, 1f, green);
+            Rail("Bridge railing", new[] { new Vector3(-x1 - 1f, y + 1f, z + s * (half - 0.1f)), new Vector3(x1 + 1f, y + 1f, z + s * (half - 0.1f)) });
+        }
+        foreach (var sx in new[] { -1f, 1f })
+        {
+            // a pillar each side, then the ramp down along the pavement
+            AK("white").Box(new Vector3(sx * x1, (y - 0.5f) / 2f, z), new Vector3(0.6f, y - 0.5f, 0.6f), Quaternion.identity, 1f, 1f, green);
+            AkBox(new Vector3(sx * x1, (y - 0.5f) / 2f, z), new Vector3(0.6f, y - 0.5f, 0.6f));
+            float dz = sx > 0f ? 1f : -1f;
+            Vector3 bottom = new Vector3(sx * x1, Kerb, z + dz * (half + 20f));
+            Wedge("concrete", bottom, new Vector3(0f, 0f, -dz), 20f, y - Kerb, 2.8f);
+            foreach (var e in new[] { -1.45f, 1.45f })
+                Rail("Bridge ramp rail", new[] { bottom + new Vector3(e, 1f, 0f), new Vector3(sx * x1 + e, y + 1f, z + dz * half) });
+        }
+        akAnchors.Add(new Vector3(0f, y, z));
+    }
+
+    // a string of paper lanterns between two points (a grindable line)
+    static void Lanterns(Vector3 a, Vector3 b)
+    {
+        var line = Catenary(a, b, Vector3.Distance(a, b) * 0.05f, 14);
+        Rail("Lantern string", line, false);
+        AK("white").Tube(line, 0.03f, 4, 4f, new Color32(40, 30, 30, 255));
+        for (int i = 1; i < line.Length - 1; i++)
+            AK("white", "e").Ellipsoid(line[i] + Vector3.down * 0.45f, new Vector3(0.28f, 0.38f, 0.28f), 8, 5, i % 3 == 0 ? new Color32(255, 240, 200, 255) : new Color32(255, 70, 60, 255));
+    }
+
+    static void AkFlow()
+    {
+        // pedestrian bridges over the main street
+        foreach (var z in BridgeZ) FootBridge(z);
+
+        // updrafts up the skyscrapers: a vent on the pavement in front, blowing you up to a balcony
+        foreach (var (lot, h) in akSkyscrapers)
+        {
+            float face = lot.center.x > 0f ? -1f : 1f, fx = face < 0 ? lot.xMin : lot.xMax;
+            float zc = VentZ(lot);
+            float top = Mathf.Min(h - 6f, 48f);
+            Vent(new Vector3(fx + face * 4.2f, Kerb, zc), top - Kerb + 1.5f, 2.2f);
+            AkPorch(fx, face, top, zc, 7f);
+        }
+
+        // the rooftops along each side of the street, joined up: where the next roof is a bit higher, a
+        // ramp up to it; much higher, a vent on this roof that blows you up to it
+        int ramps = 0, vents = 0;
+        foreach (var side in new[] { -1f, 1f })
+        {
+            var row = akLots.FindAll(l => Mathf.Sign(l.Item1.center.x) == side);
+            row.Sort((p, q) => p.Item1.yMin.CompareTo(q.Item1.yMin));
+            for (int i = 0; i < row.Count - 1; i++)
+            {
+                var (la, ha, _) = row[i];
+                var (lb, hb, _) = row[i + 1];
+                if (lb.yMin - la.yMax > 4f) continue;   // not neighbours
+                bool up = hb > ha;
+                var (lo, hl) = up ? (la, ha) : (lb, hb);
+                var (hi, hh) = up ? (lb, hb) : (la, ha);
+                float dh = hh - hl;
+                if (dh < 0.8f) continue;
+                float x0 = Mathf.Max(lo.xMin, hi.xMin) + 1f, x1 = Mathf.Min(lo.xMax, hi.xMax) - 1f;
+                if (x1 - x0 < 3f) continue;
+                float xc = (x0 + x1) / 2f, wdt = Mathf.Min(4f, x1 - x0);
+                Vector3 dir = up ? Vector3.forward : Vector3.back;   // from the low roof towards the high one
+                float edge = up ? lo.yMax : lo.yMin;
+                float len = dh * 2.6f;
+                if (dh <= 7f && len + 1f < lo.height)
+                {
+                    Wedge("roof", new Vector3(xc, hl, edge - dir.z * len), dir, len, dh + 0.05f, wdt);
+                    ramps++;
+                }
+                else
+                {
+                    Vent(new Vector3(xc, hl, edge - dir.z * 3.5f), dh + 5f, 2f);
+                    vents++;
+                }
+            }
+        }
+
+        // lantern strings across the side streets, roof edge to roof edge, and torii gates where they start
+        foreach (var cz in CrossZ)
+            foreach (var s in new[] { -1f, 1f })
+            {
+                for (float x = Front + 14f; x < 200f; x += AR(16f, 26f))
+                {
+                    float y1 = AR(5.2f, 6.6f), y2 = AR(5.2f, 6.6f);
+                    Lanterns(new Vector3(s * x, y1, cz - CrossHalf), new Vector3(s * (x + AR(6f, 14f)), y2, cz + CrossHalf));
+                }
+                // a torii gate over the side street: its top beam is a rail
+                float tx = s * (Front + 9f);
+                Color32 red = new Color32(230, 50, 40, 255), black = new Color32(30, 25, 30, 255);
+                foreach (var zz in new[] { -CrossHalf + 1.2f, CrossHalf - 1.2f })
+                {
+                    AK("white").Cylinder(new Vector3(tx, 0f, cz + zz), new Vector3(tx, 6.4f, cz + zz), 0.35f, 10, 2f, red);
+                    var cap = new GameObject("Torii post").AddComponent<CapsuleCollider>();
+                    cap.transform.SetParent(akCol, false); cap.transform.position = new Vector3(tx, 3.2f, cz + zz); cap.radius = 0.35f; cap.height = 6.4f;
+                }
+                AK("white").Box(new Vector3(tx, 5.4f, cz), new Vector3(0.5f, 0.4f, CrossHalf * 2f - 1f), Quaternion.identity, 1f, 1f, red);
+                AK("white").Box(new Vector3(tx, 6.55f, cz), new Vector3(0.7f, 0.35f, CrossHalf * 2f + 2f), Quaternion.identity, 1f, 1f, black);
+                AkBox(new Vector3(tx, 6.55f, cz), new Vector3(0.7f, 0.35f, CrossHalf * 2f + 2f));
+                Rail("Torii", new[] { new Vector3(tx, 6.75f, cz - CrossHalf - 0.8f), new Vector3(tx, 6.75f, cz + CrossHalf + 0.8f) }, false);
+                // a ramen cart (its roof's a ledge) and a row of bikes in a rack (grindable)
+                float rx = s * AR(Front + 30f, 120f);
+                Vector3 cart = new Vector3(rx, 0f, cz + CrossHalf - 1.4f);
+                AK("white").Box(cart + Vector3.up * 0.6f, new Vector3(2.6f, 1.2f, 1.4f), Quaternion.identity, 1f, 1f, new Color32(150, 100, 60, 255));
+                AK("shop_4", "e").Panel(cart + new Vector3(0f, 0.6f, -0.71f), Rt(Vector3.back) * 1.25f, Vector3.up * 0.55f);
+                AK("white").Box(cart + Vector3.up * 2.25f, new Vector3(3f, 0.15f, 2f), Quaternion.identity, 1f, 1f, new Color32(200, 40, 40, 255));
+                foreach (var lx in new[] { -1.1f, 1.1f }) AK("white", "e").Ellipsoid(cart + new Vector3(lx, 1.8f, -1f), new Vector3(0.25f, 0.35f, 0.25f), 8, 5, new Color32(255, 70, 60, 255));
+                AkBox(cart + Vector3.up * 0.6f, new Vector3(2.6f, 1.2f, 1.4f));
+                AkBox(cart + Vector3.up * 2.25f, new Vector3(3f, 0.15f, 2f));
+                float bx = s * AR(Front + 20f, 150f);
+                Rail("Bike rack", new[] { new Vector3(bx, 0.7f, cz - CrossHalf + 1f), new Vector3(bx + s * 8f, 0.7f, cz - CrossHalf + 1f) });
+                for (float b = 0.5f; b < 8f; b += 0.9f)
+                    AK("white").Box(new Vector3(bx + s * b, 0.5f, cz - CrossHalf + 1.6f), new Vector3(0.08f, 0.9f, 1.6f), Quaternion.identity, 1f, 1f, new Color32((byte)AI(60, 255), (byte)AI(60, 255), (byte)AI(60, 255), 255));
+            }
+        Debug.Log("AKIBA_FLOW roof ramps=" + ramps + " roof vents=" + vents);
+    }
     // ---- the median: a strip of junk down the middle of the main street to skate --------------------
 
     static void AkMedian()
     {
         for (float z = -AveLen + 30f; z < AveLen - 30f; z += AR(10f, 18f))
         {
-            if (Mathf.Abs(z) < RailHalf + 6f) continue;
+            if (Mathf.Abs(z) < RailHalf + 6f || Reserved(z)) continue;
             bool cross = false;
             foreach (var cz in CrossZ) if (Mathf.Abs(z - cz) < CrossHalf + 4f) cross = true;
             if (cross) continue;
@@ -745,7 +980,9 @@ public static partial class SkateWorldBuilder
                 Rail("Barrier", new[] { new Vector3(0f, 0.92f, z - 3.8f), new Vector3(0f, 0.92f, z + 3.8f) }, false);
                 z += 6f;
             }
-            else if (k < 0.36f) Hump("Road kicker", new Vector3(AR(-1.5f, 1.5f), 0f, z), new Vector3(0f, 0f, dir), AR(3f, 5f), AR(22f, 34f), 3f, RampSide2);
+            else if (k < 0.27f) { BoostArrow(new Vector3(0f, 0f, z), new Vector3(0f, 0f, dir), 28f); z += 4f; }
+            else if (k < 0.36f) { Capsule(new Vector3(AR(-1f, 1f), 0f, z), AR(1.4f, 2f)); z += 4f; }
+            else if (k < 0.44f) Hump("Road kicker", new Vector3(AR(-1.5f, 1.5f), 0f, z), new Vector3(0f, 0f, dir), AR(3f, 5f), AR(22f, 34f), 3f, RampSide2);
             else if (k < 0.5f) Wedge("metal", new Vector3(AR(-1f, 1f), 0f, z), new Vector3(0f, 0f, dir), AR(3f, 6f), AR(0.8f, 1.8f), 3f);
             else if (k < 0.62f)
             {
@@ -911,7 +1148,9 @@ public static partial class SkateWorldBuilder
             if (!clear) continue;
             float px = s * (Road + 3.2f);
             akNoStall.Add(new Vector3(s, kz - 6f, kz + 6f));
+            if (Reserved(kz, 8f)) continue;
             Hump("Kicker", new Vector3(px, Kerb, kz), new Vector3(0f, 0f, dir), 4f, 26f, 3.6f, RampSide2);
+            BoostArrow(new Vector3(px, Kerb, kz - dir * 12f), new Vector3(0f, 0f, dir), 24f);
             var c = cols[made % cols.Length];
             CurvyRail("Curvy rail", new[] { new Vector3(px, 2.2f, kz + dir * 10f), new Vector3(px + s * AR(-1f, 1f), AR(3.5f, 6f), kz + dir * 20f),
                                              new Vector3(px - s * AR(0f, 4f), a.y * 0.5f + 2f, (kz + a.z) / 2f + dir * 6f),
@@ -1121,6 +1360,15 @@ public static partial class SkateWorldBuilder
             (new Vector3(60f, 0.35f, -160f), 90f), (new Vector3(-80f, 0.35f, 160f), -90f), (new Vector3(100f, 0.35f, 320f), 90f) };
         // and a couple on roofs, to fly up higher from
         spots.Add((new Vector3(EaLot.center.x + 4f, EaH + 0.35f, EaLot.center.y), 90f));
+        // and on mid-height rooftops, pointing along the street over the other roofs
+        int roofCars = 0;
+        foreach (var (lot, h, _) in akLots)
+        {
+            if (h < 40f || h > 115f || lot.height < 14f || roofCars >= 6) continue;
+            if (roofCars > 0 && ark.NextDouble() < 0.4) continue;
+            spots.Add((new Vector3(lot.center.x, h + 0.35f, lot.center.y), lot.center.y < 0f ? 0f : 180f));
+            roofCars++;
+        }
         Color32[] cols = { new Color32(255, 230, 60, 255), new Color32(255, 80, 200, 255), new Color32(60, 230, 255, 255), new Color32(255, 140, 40, 255) };
         int i = 0;
         foreach (var (at, yaw) in spots)
@@ -1134,9 +1382,41 @@ public static partial class SkateWorldBuilder
             go.GetComponent<MeshRenderer>().sharedMaterials = new[] { AkMat("white", "e"), outlineMat };
             go.GetComponent<MeshCollider>().sharedMesh = mesh;
             var hc = go.GetComponent<HoverCar>();
-            hc.climb = 45f;
+            hc.climb = 60f; hc.speed = 38f; hc.fuse = 4f;
             hc.seat = new Vector3(0f, 1.7f, -0.8f);
+            hc.fire = Burst(go.transform, "Explosion", new Color(1f, 0.55f, 0.1f), new Color(1f, 0.95f, 0.4f), 1.2f, 3.5f, 14f, 26f, 0.7f, 120);
+            hc.smoke = Burst(go.transform, "Smoke", new Color(0.25f, 0.2f, 0.3f, 0.8f), new Color(0.5f, 0.45f, 0.55f, 0.6f), 2.5f, 5f, 3f, 8f, 2.2f, 40);
         }
+    }
+
+    // a one-shot burst of particles (an explosion's fireball or smoke), played from code
+    static ParticleSystem Burst(Transform parent, string name, Color a, Color b, float size0, float size1, float speed0, float speed1, float life, int count)
+    {
+        var go = new GameObject(name, typeof(ParticleSystem));
+        go.transform.SetParent(parent, false);
+        go.transform.localPosition = Vector3.up;
+        var ps = go.GetComponent<ParticleSystem>();
+        ps.Stop(true, ParticleSystemStopBehavior.StopEmittingAndClear);
+        var main = ps.main;
+        main.loop = false; main.playOnAwake = false; main.duration = 0.5f;
+        main.startLifetime = new ParticleSystem.MinMaxCurve(life * 0.6f, life);
+        main.startSpeed = new ParticleSystem.MinMaxCurve(speed0, speed1);
+        main.startSize = new ParticleSystem.MinMaxCurve(size0, size1);
+        main.startColor = new ParticleSystem.MinMaxGradient(a, b);
+        main.simulationSpace = ParticleSystemSimulationSpace.World;
+        main.gravityModifier = -0.2f;
+        main.maxParticles = count * 2;
+        var em = ps.emission; em.rateOverTime = 0f;
+        em.SetBursts(new[] { new ParticleSystem.Burst(0f, (short)count) });
+        var shape = ps.shape; shape.shapeType = ParticleSystemShapeType.Sphere; shape.radius = 1f;
+        var fade = ps.colorOverLifetime; fade.enabled = true;
+        var grad = new Gradient();
+        grad.SetKeys(new[] { new GradientColorKey(Color.white, 0f), new GradientColorKey(new Color(0.5f, 0.4f, 0.4f), 1f) },
+                     new[] { new GradientAlphaKey(1f, 0f), new GradientAlphaKey(0f, 1f) });
+        fade.color = grad;
+        var grow = ps.sizeOverLifetime; grow.enabled = true; grow.size = new ParticleSystem.MinMaxCurve(1f, AnimationCurve.Linear(0f, 0.6f, 1f, 1.6f));
+        go.GetComponent<ParticleSystemRenderer>().sharedMaterial = Mat("Sparks", "Sprites/Default");
+        return ps;
     }
 
     // ---- weird stuff: lucky cats, hologram signs, a blimp ------------------------------------------------
@@ -1221,5 +1501,9 @@ public static partial class SkateWorldBuilder
         Shot(cam, new Vector3(-150f, 200f, -600f), new Vector3(0f, 40f, -100f), "a07-overview.png");
         Shot(cam, new Vector3(30f, 4f, -170f), new Vector3(120f, 6f, -160f), "a08-side-street.png");
         Shot(cam, new Vector3(3f, 2f, -430f), new Vector3(0f, 1f, -400f), "a09-median.png");
+        Shot(cam, new Vector3(-8f, 2.5f, -55f), new Vector3(0f, 6f, -100f), "a10-footbridge.png");
+        Shot(cam, new Vector3(4f, 2.5f, -165f), new Vector3(15.8f, 16f, -135f), "a11-updraft.png");
+        Shot(cam, new Vector3(-70f, 80f, -60f), new Vector3(-40f, 40f, 40f), "a12-rooftops.png");
+        Shot(cam, new Vector3(26f, 3f, 160f), new Vector3(90f, 6f, 160f), "a13-lanterns.png");
     }
 }

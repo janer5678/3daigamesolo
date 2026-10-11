@@ -508,19 +508,75 @@ public static class SlideTests
             bool carRide = carTop > 30f && nearWall < 4f;
             bool wallLine = piped && lineTop > 150f;
 
-            // a flying car with a ramp on its back: ride up the ramp and you're flying it
+            // a rocket car with a ramp on its back: ride up the ramp and you're flying it, flat out. Jump off
+            // early and it blows up and comes back; stay on and it blows up after 4 seconds, throwing you on
             HoverCar hover = null;
             foreach (var h in Object.FindObjectsByType<HoverCar>(FindObjectsSortMode.None)) if (Mathf.Abs(h.transform.position.z + 446f) < 1f) hover = h;
             hover.Init();
-            Place(hover.transform.position + new Vector3(0f, 0.3f, -9f), Vector3.zero);
-            c.yaw = 0f;
-            bool flying = false; float hy0 = hover.transform.position.y;
-            for (int i = 0; i < 200 && !flying; i++) { Step(new SlideInput { forward = 1f, sprint = true }); flying = c.Piloting; }
-            for (int i = 0; i < 150; i++) Step(new SlideInput { forward = 1f, jumpHeld = true });
-            float flewUp = hover.transform.position.y - hy0, flewOn = hover.transform.position.z + 446f;
+            Vector3 hoverHome = hover.transform.position;
+            System.Func<bool> boardIt = () =>
+            {
+                Place(hoverHome + new Vector3(0f, 0.3f, -9f), Vector3.zero);
+                c.yaw = 0f;
+                for (int i = 0; i < 200; i++) { Step(new SlideInput { forward = 1f, sprint = true }); if (c.Piloting) return true; }
+                return false;
+            };
+            bool flying = boardIt();
+            for (int i = 0; i < 50; i++) Step(new SlideInput { forward = 1f, jumpHeld = true });
+            float flewUp = hover.transform.position.y - hoverHome.y, flewOn = hover.transform.position.z - hoverHome.z;
             Step(new SlideInput { dismount = true });
             bool hopped = !c.Piloting;
-            bool hoverOk = flying && flewUp > 8f && flewOn > 10f && hopped;
+            // left behind, it blows up, and turns up again back where it started
+            hover.Idle(Dt);
+            bool leftBlew = hover.Exploded;
+            for (int i = 0; i < 400; i++) hover.Idle(Dt);
+            bool cameBack = !hover.Exploded && Vector3.Distance(hover.transform.position, hoverHome) < 0.5f;
+            // now ride it till it blows
+            bool flying2 = boardIt();
+            Vector3 boardedAt = c.transform.position;
+            float ride = 0f;
+            while (c.Piloting && ride < 8f) { Step(new SlideInput { forward = 1f, jumpHeld = true }); ride += Dt; }
+            bool blew = hover.Exploded;
+            float blastY = c.transform.position.y, flung = 0f;
+            for (int i = 0; i < 60; i++) { Step(new SlideInput { forward = 1f }); flung = Mathf.Max(flung, c.transform.position.y - blastY); }
+            float rocketed = Vector3.Distance(new Vector3(boardedAt.x, 0f, boardedAt.z), new Vector3(c.transform.position.x, 0f, c.transform.position.z));
+            for (int i = 0; i < 400; i++) hover.Idle(Dt);
+            Physics.SyncTransforms();
+            bool hoverOk = flying && flewUp > 4f && flewOn > 20f && hopped && leftBlew && cameBack
+                           && flying2 && blew && ride > 3.6f && ride < 4.4f && flung > 3f && rocketed > 120f && !hover.Exploded;
+
+            // a boost arrow on the ground: roll over it slowly and it shoots you off
+            BoostPad pad = null;
+            foreach (var p in Object.FindObjectsByType<BoostPad>(FindObjectsSortMode.None)) if (pad == null && p.transform.position.y < 0.3f) pad = p;
+            Place(pad.transform.position - pad.direction * 6f + Vector3.up * 0.6f, Vector3.zero);
+            c.yaw = Mathf.Atan2(pad.direction.x, pad.direction.z) * Mathf.Rad2Deg;
+            float padTop = 0f;
+            for (int i = 0; i < 80; i++) { Step(new SlideInput { forward = 1f }); padTop = Mathf.Max(padTop, c.Speed); }
+            bool padOk = padTop > pad.speed * 0.9f;
+
+            // a giant capsule toy: drop on it and it bounces you high
+            Collider capsule = null;
+            foreach (var b in Object.FindObjectsByType<Bouncer>(FindObjectsSortMode.None)) if (capsule == null && b.GetComponent<SphereCollider>() != null) capsule = b.GetComponent<Collider>();
+            float capTop = capsule.bounds.max.y;
+            Place(capsule.bounds.center + Vector3.up * (capsule.bounds.extents.y + 2f), Vector3.zero);
+            float bounce = 0f;
+            for (int i = 0; i < 150; i++) { Step(new SlideInput()); bounce = Mathf.Max(bounce, c.transform.position.y - capTop); }
+            bool capOk = bounce > 4f;
+
+            // an updraft in front of a skyscraper: stand in it and it carries you up to a balcony
+            Updraft draft = null;
+            foreach (var u in Object.FindObjectsByType<Updraft>(FindObjectsSortMode.None)) if (u.height > 30f && (draft == null || u.height > draft.height)) draft = u;
+            Place(draft.transform.position + Vector3.up * 0.6f, Vector3.zero);
+            float risen = 0f;
+            for (int i = 0; i < 300; i++) { Step(new SlideInput()); risen = Mathf.Max(risen, c.transform.position.y - draft.transform.position.y); }
+            bool draftOk = risen > Mathf.Min(15f, draft.height - 3f);
+
+            // a footbridge over the street: ride up its ramp along the pavement onto the deck
+            Place(new Vector3(15.2f, 0.6f, -77.5f), Vector3.zero);
+            c.yaw = 180f;
+            float deck = 0f;
+            for (int i = 0; i < 250; i++) { Step(new SlideInput { forward = 1f, sprint = true }); if (c.Grounded) deck = Mathf.Max(deck, c.transform.position.y); }
+            bool bridgeOk = deck > 5.8f;
 
             // a ramp truck: catch it up from behind, up its ramp, onto the bed
             Mover truck = null;
@@ -545,13 +601,19 @@ public static class SlideTests
             float standX = under(false), slideX = under(true);
             bool slideUnder = standX < 23f && slideX > 25f;
 
-            Report("akiba: board speed, powerslide, route, flying car into the lines, flyable car, ramp truck, slide under", cruise < 8f && flat > 12f && boost && route && carRide && wallLine && hoverOk && truckRide && slideUnder,
+            Report("akiba: board speed, powerslide, route, flying car into the lines, rocket car, ramp truck, slide under, boost pad, capsule, updraft, footbridge", cruise < 8f && flat > 12f && boost && route && carRide && wallLine && hoverOk && truckRide && slideUnder && padOk && capOk && draftOk && bridgeOk,
                    "board " + (cruise * 3.6f).ToString("F0") + "km/h cruising, " + (flat * 3.6f).ToString("F0") + "km/h with Shift"
                    + "; powerslide " + (inSlide * 3.6f).ToString("F0") + " -> " + (outSlide * 3.6f).ToString("F0") + "km/h coming out"
                    + "; route: " + (railed ? "caught the rail" : "MISSED THE RAIL") + ", ended at " + routeEnd.ToString("F1") + " (roof is 22m)"
                    + "; flying car: up to " + carTop.ToString("F1") + "m, " + nearWall.ToString("F1") + "m from the skyscraper"
                    + "; " + (piped ? "the pipe grabbed me off it" : "THE PIPE NEVER GRABBED ME") + ", up to " + lineTop.ToString("F0") + "m"
-                   + "; flyable car: " + (flying ? "flew it up " + flewUp.ToString("F0") + "m and on " + flewOn.ToString("F0") + "m" + (hopped ? ", hopped off" : ", COULDN'T GET OFF") : "NEVER GOT ON")
+                   + "; rocket car: " + (flying ? "flew it up " + flewUp.ToString("F0") + "m and on " + flewOn.ToString("F0") + "m in 1s" + (hopped ? ", hopped off" : ", COULDN'T GET OFF") : "NEVER GOT ON")
+                   + (leftBlew ? ", left behind it blew" : ", LEFT BEHIND IT DIDN'T BLOW") + (cameBack ? " and came back" : " and DIDN'T COME BACK")
+                   + "; ridden: " + (flying2 ? "blew " + (blew ? "" : "(NOT) ") + "after " + ride.ToString("F1") + "s, flung me " + flung.ToString("F1") + "m up, " + rocketed.ToString("F0") + "m from where I got on" : "NEVER GOT ON THE 2ND TIME")
+                   + "; boost pad: up to " + (padTop * 3.6f).ToString("F0") + "km/h (pad " + (pad.speed * 3.6f).ToString("F0") + ")"
+                   + "; capsule bounced me " + bounce.ToString("F1") + "m over it"
+                   + "; updraft carried me up " + risen.ToString("F1") + "m of " + draft.height.ToString("F0")
+                   + "; footbridge: up to " + deck.ToString("F1") + "m (deck is 6m)"
                    + "; ramp truck: up to " + bed.ToString("F1") + "m"
                    + "; barrier: standing stopped at x=" + standX.ToString("F1") + ", sliding got to x=" + slideX.ToString("F1"));
         }
