@@ -11,6 +11,10 @@ public class SlideHUD : MonoBehaviour
     public string levelName;
     [Tooltip("Draw it as glossy Frutiger Aero panels.")]
     public bool aero;
+    [Tooltip("The controls line shown at the start (empty: the usual one).")]
+    public string hint;
+    [Tooltip("Don't draw the speed in the corner (the level draws its own).")]
+    public bool noSpeed;
 
     static readonly Color Ink = new Color(0.17f, 0.10f, 0.29f);
     static readonly Color Cream = new Color(1f, 0.97f, 0.98f);
@@ -161,11 +165,12 @@ public class SlideHUD : MonoBehaviour
     {
         float k = Screen.height / 1080f, W = Screen.width, H = Screen.height;
         if (aero && player != null) AeroGUI(k, W, H);
-        else if (player != null)
+        else if (player != null && !noSpeed)
             Outlined(new Rect(W - 330 * k, 20 * k, 300 * k, 50 * k), Mathf.RoundToInt(player.Speed * 3.6f) + " km/h", Style(Mathf.RoundToInt(34 * k), TextAnchor.UpperRight), Cream);
         if (hintTimer > 0f)
         {
-            Outlined(new Rect(0, H - 90 * k, W, 50 * k), "WASD move    SHIFT faster    SPACE jump (hold: higher)    C slide / powerslide    RIGHT CLICK off/on the board    land on a flying car to fly it: SPACE up, C down, W/S speed    V camera    TAB level    R checkpoint",
+            if (!string.IsNullOrEmpty(hint)) Outlined(new Rect(0, H - 90 * k, W, 50 * k), hint, Style(Mathf.RoundToInt(30 * k), TextAnchor.MiddleCenter), Cream);
+            else Outlined(new Rect(0, H - 90 * k, W, 50 * k), "WASD move    SHIFT faster    SPACE jump (hold: higher, again in the air: kickflip)    C slide / powerslide    RIGHT CLICK off/on the board    land on a flying car to fly it: SPACE up, C down, W/S speed    V camera    TAB level    R checkpoint",
                      Style(Mathf.RoundToInt(30 * k), TextAnchor.MiddleCenter), Cream);
             if (!string.IsNullOrEmpty(levelName))
                 Outlined(new Rect(0, 60 * k, W, 90 * k), levelName, Style(Mathf.RoundToInt(72 * k), TextAnchor.MiddleCenter), Cream);

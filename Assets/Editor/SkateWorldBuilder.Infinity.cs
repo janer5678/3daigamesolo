@@ -4,9 +4,10 @@ using UnityEditor.SceneManagement;
 using UnityEngine;
 
 // Infinity: after a fly-through of a 3D fractal, and it goes on for ever. The level itself is built as you
-// play by InfinityWorld (an endless lattice of fractal towers, layer under layer, bridges from every tower's
-// corners down to the towers diagonally below); this sets up the scene round it: the glowing, always-moving
-// fractal material (SkateFractal.shader), the void, you on the first tower.
+// play by InfinityWorld (fractal towers all over the place joined by hard ways across, and under it the same
+// again, layer under layer: fall off and you fall till you land on it lower down, a bit further back); this sets
+// up the scene round it: the glowing, always-moving fractal material (SkateFractal.shader), the void, the
+// warped, colour-cycling look over the whole frame (InfinityFX), you on the first tower facing the way on.
 public static partial class SkateWorldBuilder
 {
     public const string InfinityPath = "Assets/Scenes/Infinity.unity";
@@ -49,9 +50,10 @@ public static partial class SkateWorldBuilder
         spaceMat.SetColor("_NebulaA", new Color(0.02f, 0.03f, 0.06f)); spaceMat.SetColor("_NebulaB", new Color(0.05f, 0.02f, 0.06f));
         spaceMat.SetFloat("_Stars", 0.25f); spaceMat.SetFloat("_BigStars", 0.1f);
 
+        Vector3 on = new Vector3(428.1f, 0f, 612.3f).normalized;   // (InfinityWorld.Forward)
         var start = new GameObject("Start");
-        start.transform.SetPositionAndRotation(new Vector3(-4f, 0.2f, -4f), Quaternion.LookRotation(new Vector3(1f, 0f, 1f)));
-        var camGO = new GameObject("Main Camera", typeof(Camera), typeof(AudioListener), typeof(SlideHUD), typeof(SkateAutoShot), typeof(LevelSwitcher));
+        start.transform.SetPositionAndRotation(-on * 3f + Vector3.up * 0.2f, Quaternion.LookRotation(on));
+        var camGO = new GameObject("Main Camera", typeof(Camera), typeof(AudioListener), typeof(SlideHUD), typeof(SkateAutoShot), typeof(LevelSwitcher), typeof(InfinityFX));
         camGO.tag = "MainCamera";
         var cam = camGO.GetComponent<Camera>();
         cam.nearClipPlane = 0.1f; cam.farClipPlane = 4000f;
@@ -67,8 +69,11 @@ public static partial class SkateWorldBuilder
         player.fallLimit = -80f;
         camGO.GetComponent<SlideHUD>().player = player;
         camGO.GetComponent<SlideHUD>().levelName = "Infinity";
-        camGO.transform.SetPositionAndRotation(new Vector3(-6f, 2.5f, -6f), Quaternion.LookRotation(new Vector3(1f, 0f, 1f)));
-        player.board = BuildBoard(new Vector3(-3f, 0f, -3f), Quaternion.LookRotation(new Vector3(1f, 0f, 1f)));
+        camGO.transform.SetPositionAndRotation(-on * 5f + Vector3.up * 2.5f, Quaternion.LookRotation(on));
+        player.board = BuildBoard(-on * 1.5f, Quaternion.LookRotation(on), false);   // (a hoverboard: no wheels)
+        var fx = camGO.GetComponent<InfinityFX>();
+        fx.material = Mat("InfinityPost", "3daigamesolo/Post/Infinity");
+        fx.player = player;
 
         // the endless fractal, built as you go
         var world = new GameObject("Infinity", typeof(InfinityWorld)).GetComponent<InfinityWorld>();
@@ -85,15 +90,19 @@ public static partial class SkateWorldBuilder
     {
         var world = Object.FindFirstObjectByType<InfinityWorld>();
         var cam = Object.FindFirstObjectByType<Camera>();
+        Vector3 on = world.Forward;
         world.GenerateAround(Vector3.zero, true);
-        Shot(cam, new Vector3(-6f, 2f, -6f), new Vector3(30f, -8f, 30f), "i01-start.png");
-        Shot(cam, new Vector3(-40f, 30f, -60f), new Vector3(30f, -20f, 30f), "i02-overview.png");
-        Shot(cam, new Vector3(20f, -6f, 20f), new Vector3(60f, -30f, 60f), "i03-down-the-layers.png");
-        Shot(cam, new Vector3(28f, -14f, 0f), new Vector3(28f, 10f, 28f), "i04-looking-up.png");
-        Vector3 deep = world.Centre(4, -3, 60);
+        Shot(cam, -on * 5f + Vector3.up * 2.2f, on * 40f + Vector3.down * 2f, "i01-start.png");
+        Shot(cam, new Vector3(-50f, 30f, -70f), new Vector3(30f, -20f, 30f), "i02-overview.png");
+        Shot(cam, new Vector3(-20f, 14f, 50f), new Vector3(25f, -40f, 30f), "i03-the-layers-below.png");
+        Shot(cam, new Vector3(4f, 2.2f, 2f), world.Centre(1, 0), "i04-a-way-across.png");
+        Vector3 root, d; float len, ws;
+        world.Petal(0, 0, 1, 1, out root, out d, out len, out ws);
+        Vector3 tip = world.PetalAt(root, d, len, 1f);
+        Shot(cam, tip - d * 2f + Vector3.up * 2.2f, tip + d * 14f + Vector3.down * 30f, "i05-looking-down-off-a-petal.png");
+        Vector3 deep = world.ToWorld(world.Centre(20, 21), 60);
         world.GenerateAround(deep, true);
-        Shot(cam, deep + new Vector3(-6f, 3f, -6f), deep + new Vector3(30f, -12f, 30f), "i05-sixty-layers-down.png");
-        Shot(cam, deep + new Vector3(0f, -20f, 40f), deep + new Vector3(60f, -40f, -60f), "i06-into-the-dark.png");
+        Shot(cam, deep - on * 5f + Vector3.up * 3f, deep + on * 40f + Vector3.down * 6f, "i06-sixty-layers-down.png");
         world.GenerateAround(Vector3.zero, true);
     }
 }

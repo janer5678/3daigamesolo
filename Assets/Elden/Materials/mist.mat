@@ -1,0 +1,41 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!21 &2100000
+Material:
+  serializedVersion: 8
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_Name: mist
+  m_Shader: {fileID: 4800000, guid: 0ccccf9f6d10ce54f84b4b3ed17cc044, type: 3}
+  m_Parent: {fileID: 0}
+  m_ModifiedSerializedProperties: 0
+  m_ValidKeywords: []
+  m_InvalidKeywords: []
+  m_LightmapFlags: 4
+  m_EnableInstancingVariants: 0
+  m_DoubleSidedGI: 0
+  m_CustomRenderQueue: 3100
+  stringTagMap: {}
+  disabledShaderPasses: []
+  m_LockedProperties: 
+  m_SavedProperties:
+    serializedVersion: 3
+    m_TexEnvs:
+    - _MainTex:
+        m_Texture: {fileID: 2800000, guid: 63af3458836b61140b39a499671efcf0, type: 3}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
+    m_Ints: []
+    m_Floats:
+    - _Cull: 0
+    - _Dst: 10
+    - _NearFade: 20
+    - _Src: 1
+    m_Colors:
+    - _Color: {r: 0.82, g: 0.84, b: 0.84, a: 0.55}
+    - _Pulse: {r: 0, g: 0, b: 0, a: 0}
+    - _Scroll: {r: 0.004, g: 0.002, b: -0.003, a: 0.0015}
+  m_BuildTextureStacks: []
+  m_AllowLocking: 1

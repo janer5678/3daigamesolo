@@ -9,6 +9,30 @@ EditorBuildSettings:
     path: Assets/Scenes/Akiba.unity
     guid: 8228bc1e68e920c48badef96939f5196
   - enabled: 1
+    path: Assets/Scenes/AkibaSky.unity
+    guid: b96cdde3bd7c5f44596fce51fb7d61d0
+  - enabled: 1
+    path: Assets/Scenes/EldenRuins.unity
+    guid: 32fb383330422a34ca8b0df13eb4f83f
+  - enabled: 1
+    path: Assets/Scenes/SurfMesa.unity
+    guid: 16d778a3f06af9340876f01f2a62fa88
+  - enabled: 1
+    path: Assets/Scenes/Me.unity
+    guid: 2dccbe0b090a6c04faab7c8fe4ab2ec6
+  - enabled: 1
+    path: Assets/Scenes/Sketchbook.unity
+    guid: e2382ad3e7cd9524b8cab7e530739aa6
+  - enabled: 1
+    path: Assets/Scenes/Dream.unity
+    guid: 9ff43c096e4198e42a79e3966b4f34d2
+  - enabled: 1
+    path: Assets/Scenes/Circulation.unity
+    guid: bd1f2a6b437fa6a448a37e86d3b5507e
+  - enabled: 1
+    path: Assets/Scenes/Stream.unity
+    guid: 6557495a03d745d40b9bd9dfc55bec4d
+  - enabled: 1
     path: Assets/Scenes/Aero.unity
     guid: 429dacf7cd543ee4d88c5ce5d2424734
   - enabled: 1

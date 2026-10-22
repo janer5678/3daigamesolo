@@ -236,12 +236,36 @@ public static partial class SkateWorldBuilder
             BuildAkiba();
             SlideTests.RunAkiba();
             AkibaShots();
+            BuildAkibaSky();
+            SlideTests.RunAkibaSky();
+            AkibaSkyShots();
+            BuildElden();
+            SlideTests.RunElden();
+            EldenShots();
+            BuildSurf();
+            SlideTests.RunSurf();
+            SurfShots();
             BuildAero();
             SlideTests.RunAero();
             AeroShots();
             BuildInfinity();
             SlideTests.RunInfinity();
             InfinityShots();
+            BuildMe();
+            SlideTests.RunMe();
+            MeShots();
+            BuildSketch();
+            SlideTests.RunSketch();
+            SketchShots();
+            BuildDream();
+            SlideTests.RunDream();
+            DreamShots();
+            BuildCirculation();
+            SlideTests.RunCirculation();
+            CirculationShots();
+            BuildStream();
+            SlideTests.RunStream();
+            StreamShots();
         }
         catch (System.Exception e)
         {
@@ -817,7 +841,7 @@ public static partial class SkateWorldBuilder
         return k <= 0f ? 0f : (k < 0.06f ? k * k / 0.12f * 0.32f : 0.06f * 0.16f + (k - 0.06f) * 0.32f);
     }
 
-    static Transform BuildBoard(Vector3 at, Quaternion rot)
+    static Transform BuildBoard(Vector3 at, Quaternion rot, bool wheels = true)
     {
         Color32 grip = new Color32(52, 50, 58, 255), wood = new Color32(232, 208, 168, 255);
         Color32 metal = new Color32(178, 180, 188, 255), wheel = new Color32(244, 240, 230, 255);
@@ -857,6 +881,7 @@ public static partial class SkateWorldBuilder
 
         foreach (float s in new[] { -1f, 1f })
         {
+            if (!wheels) break;
             float tz = s * 0.3f, axle = 0.058f;
             // truck: baseplate, kingpin, and a round hanger out to the wheels
             b.Box(new Vector3(0f, DeckBottom - 0.01f, tz), new Vector3(0.11f, 0.02f, 0.12f), Quaternion.identity, metal);

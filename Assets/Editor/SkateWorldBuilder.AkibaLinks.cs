@@ -38,6 +38,7 @@ public static partial class SkateWorldBuilder
         public float yaw;
         public bool forward = true, sprint;
         public float jumpAt = -1f;             // jump once you've come this far from the start (along the ground)
+        public bool doubleJump;                // ...and jump again at the top of it
         public bool letGo;                     // let go of everything once you're in the air (a launch pad's arc does the rest)
         public float steerAbove = float.NaN;   // once you're up this high, ride towards steerTo
         public Vector3 steerTo;

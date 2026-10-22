@@ -131,11 +131,19 @@ public static partial class SkateWorldBuilder
         Debug.Log("SKATE_PALACE_BUILT features=" + featureCount);
     }
 
-    // Akiba opens first; Tab goes on to Aero, Infinity, the city, the pink palace, then the valley
+    // Akiba opens first, then Akiba Sky; Tab goes on to Aero, Infinity, the city, the pink palace, then the valley
     static void SetBuildScenes()
     {
         var list = new List<EditorBuildSettingsScene>();
         if (File.Exists(AkibaPath)) list.Add(new EditorBuildSettingsScene(AkibaPath, true));
+        if (File.Exists(AkibaSkyPath)) list.Add(new EditorBuildSettingsScene(AkibaSkyPath, true));
+        if (File.Exists(EldenPath)) list.Add(new EditorBuildSettingsScene(EldenPath, true));
+        if (File.Exists(SurfPath)) list.Add(new EditorBuildSettingsScene(SurfPath, true));
+        if (File.Exists(MePath)) list.Add(new EditorBuildSettingsScene(MePath, true));
+        if (File.Exists(SketchPath)) list.Add(new EditorBuildSettingsScene(SketchPath, true));
+        if (File.Exists(DreamPath)) list.Add(new EditorBuildSettingsScene(DreamPath, true));
+        if (File.Exists(CirculationPath)) list.Add(new EditorBuildSettingsScene(CirculationPath, true));
+        if (File.Exists(StreamPath)) list.Add(new EditorBuildSettingsScene(StreamPath, true));
         if (File.Exists(AeroPath)) list.Add(new EditorBuildSettingsScene(AeroPath, true));
         if (File.Exists(InfinityPath)) list.Add(new EditorBuildSettingsScene(InfinityPath, true));
         if (File.Exists(CityPath)) list.Add(new EditorBuildSettingsScene(CityPath, true));

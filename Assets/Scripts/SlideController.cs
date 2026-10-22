@@ -13,7 +13,8 @@ public struct SlideInput
 }
 
 // You and your skateboard. On foot: tight control, Shift sprints, Space jumps (hold it to go higher) with
-// coyote time and jump buffering, C slides (and you fit under low things). The board's always with you
+// coyote time and jump buffering, and Space again in the air jumps once more (on the board that's a kickflip),
+// C slides (and you fit under low things). The board's always with you
 // (right click steps off, carrying it, and back on): cruise, or hold Shift to go faster; kickers launch
 // you; jump onto rails to grind them (Shift: power grind; the curvy ones grab you from a couple of metres
 // and rush you along); C is a powerslide that comes out with a boost. Land on a flying car and you fly
@@ -77,6 +78,10 @@ public class SlideController : MonoBehaviour
     public float hopBoost = 0.8f;
     [Tooltip("...up to this.")]
     public float hopSpeedCap = 12f;
+    [Tooltip("Space again in the air (once till you land): your upward speed goes to at least this, and on the board it kickflips.")]
+    public float doubleJumpSpeed = 8f;
+    [Tooltip("Added on top when you double jump while still going up, so it always lifts you some.")]
+    public float doubleJumpBoost = 2f;
 
     [Tooltip("Pressing into a wall while falling: you slide down it no faster than this.")]
     public float wallSlideSpeed = 3f;
@@ -130,6 +135,31 @@ public class SlideController : MonoBehaviour
     public float flipTime = 0.45f;
     public float flipHop = 0.4f;
     [Header("Rails (on the board)")]
+    [Header("Surf (Counter-Strike style)")]
+    [Tooltip("Slopes steeper than surfSlope aren't ground: you slide on them, and in the air A/D with the mouse steer you the Source-engine way (air acceleration), so leaning into a ramp keeps you on it and turning along it builds speed.")]
+    public bool surf;
+    public float surfSlope = 0.7f;
+    [Tooltip("sv_airaccelerate.")]
+    public float surfAirAccel = 150f;
+    [Tooltip("The most speed air strafing adds along the way you're pressing (30 units/s).")]
+    public float surfAirCap = 0.76f;
+
+    [Header("Parkour")]
+    [Tooltip("Vault low walls, grab and climb ledges, run along walls and kick off them.")]
+    public bool parkour;
+    [Tooltip("Space again in the air jumps once more (off for the levels where climbing is the point).")]
+    public bool doubleJumpOn = true;
+    [Tooltip("Ledges up to this far above your feet can be grabbed from the air (hold W into them).")]
+    public float mantleReach = 2.1f;
+    [Tooltip("Run at anything up to this high and you vault it (or step up onto it if it's deep).")]
+    public float vaultHeight = 1.3f;
+    public float wallRunMinSpeed = 4.5f;
+    public float wallRunTime = 1.3f;
+    [Tooltip("Kicking off a wall (Space while on one in the air): up this fast...")]
+    public float wallJumpUp = 9f;
+    [Tooltip("...and away from it this fast.")]
+    public float wallJumpOut = 6f;
+
     [Tooltip("How close (sideways) to a rail you need to be for the board to lock onto it.")]
     public float railCatch = 0.5f;
     [Tooltip("How far above riding height on a rail you can be and still snap down onto it.")]
@@ -147,9 +177,14 @@ public class SlideController : MonoBehaviour
     public float PilotFuse { get { return piloting != null ? piloting.FuseLeft : 0f; } }
     public bool Launched { get { return launched; } }
     public bool Flipping { get { return flip >= 0f; } }
+    public bool DoubleJumped { get { return airJumped; } }
+    public Collider StandingOn { get; private set; }   // what you're standing on, if anything
     public bool Grinding { get { return grindRail != null; } }
     public SkateRail GrindRail { get { return grindRail; } }
     public string TrickName { get { return grindRail != null ? GrindStyles[grindStyle].name : null; } }
+    public bool WallRunning { get { return wallRunning; } }
+    public bool Climbing { get { return moveT >= 0f; } }
+    public string ParkourMove { get; private set; }   // the last vault / climb / wall run / wall jump, for the tests and HUD
     public Vector3 Velocity { get { return rb.linearVelocity; } }
     public float Speed { get { return rb.linearVelocity.magnitude; } }
 
@@ -192,6 +227,7 @@ public class SlideController : MonoBehaviour
     float takeoffY;
     bool flippedThisAir;
     float flip = -1f;      // kickflip progress 0..1, or <0 when not flipping
+    bool airJumped;        // used the double jump this time in the air
     bool carrying;         // stepped off (right click): carrying the board, right click again to drop back on
 
     SkateRail[] rails;
@@ -205,6 +241,13 @@ public class SlideController : MonoBehaviour
     int grindSeg, grindStyle = 4;
     float grindU, grindSpeed, noRailTimer, lastStrafe;
     Vector3 visualOffset;  // eases the camera, board and runner over when the body snaps onto a rail
+
+    // parkour: a vault or climb is a short scripted move along from -> mid -> to
+    float moveT = -1f, moveDur;
+    Vector3 moveFrom, moveMid, moveTo, moveExit;
+    bool wallRunning;
+    float wallRunLeft, camRoll, kickLock;   // (kickLock: just kicked off a wall, so W doesn't pull you straight back)
+    Vector3 wallRunNormal, lastWallRun, lastKick;   // (zero once you've touched the ground)
 
     void Awake() { Setup(); }
 
@@ -244,9 +287,11 @@ public class SlideController : MonoBehaviour
         noPilotTimer = 0f;
         launched = false;
         flip = -1f;
+        airJumped = false;
         grindRail = null;
         noRailTimer = 0f;
         visualOffset = Vector3.zero;
+        moveT = -1f; wallRunning = false; kickLock = 0f; lastWallRun = lastKick = Vector3.zero;
         Vector3 f = s.forward;
         yaw = Mathf.Atan2(f.x, f.z) * Mathf.Rad2Deg;
         pitch = 8f;
@@ -299,6 +344,7 @@ public class SlideController : MonoBehaviour
         jumpCooldown -= dt;
         noPilotTimer -= dt;
         noRailTimer -= dt;
+        kickLock -= dt;
 
         if (grindRail != null)
         {
@@ -339,11 +385,16 @@ public class SlideController : MonoBehaviour
             return;
         }
 
+        if (moveT >= 0f) { ScriptedMove(dt); return; }   // mid-vault or mid-climb
+
         RaycastHit hit;
         Grounded = Physics.SphereCast(rb.position + Vector3.up * CastBack, ball.radius * 0.95f, Vector3.down, out hit, 0.12f + CastBack, ~0, QueryTriggerInteraction.Ignore)
-                   && hit.normal.y > 0.35f;
+                   && hit.normal.y > (surf ? surfSlope : 0.35f);   // (surfing: a steep ramp isn't ground, you slide on it)
+        if (Grounded) { lastWallRun = lastKick = Vector3.zero; }
+        if (parkour && grindRail == null && TryVaultOrClimb(inp)) return;
         groundNormal = Grounded ? hit.normal : Vector3.up;
         Collider groundCol = Grounded ? hit.collider : null;   // what you're standing on (for pads and bouncers)
+        StandingOn = groundCol;
         // a hard landing can sink you into the ground for a step: put you straight back on top, so the
         // camera doesn't dip and the next jump isn't lost
         float sunk = Grounded ? CastBack - hit.distance - ball.radius * 0.05f : 0f;
@@ -414,6 +465,7 @@ public class SlideController : MonoBehaviour
         float top = OnBoard ? (inp.sprint ? boardSprintSpeed : boardSpeed) : (inp.sprint ? sprintSpeed : walkSpeed);
 
         Vector3 v = rb.linearVelocity;
+        float vyBefore = v.y;
         float g = gravityScale;
         if (Grounded && jumpCooldown <= 0f && launched)
         {
@@ -499,7 +551,21 @@ public class SlideController : MonoBehaviour
             Vector3 vH = new Vector3(v.x, 0f, v.z);
             Vector3 wishH = new Vector3(wish.x, 0f, wish.z).normalized * wish.magnitude;
             float accel = airAccel;
-            if (wishH.sqrMagnitude < 0.01f) { if (!launched) vH = Vector3.MoveTowards(vH, Vector3.zero, airStop * dt); }
+            if (kickLock > 0f) { }   // just kicked off a wall: flying free for a moment
+            else if (surf)
+            {
+                // the Source engine's air acceleration: only the part of your speed along the way you're pressing
+                // is topped up, and only to surfAirCap, but sideways to that it's unlimited, so turning the mouse
+                // with A or D held carves (and on a ramp, holding into it keeps you on it while gravity speeds you up)
+                if (wishH.sqrMagnitude > 0.01f)
+                {
+                    Vector3 wd = wishH.normalized;
+                    float wishSpeed = top * Mathf.Min(1f, wishH.magnitude);
+                    float add = Mathf.Min(wishSpeed, surfAirCap) - Vector3.Dot(vH, wd);
+                    if (add > 0f) vH += wd * Mathf.Min(surfAirAccel * wishSpeed * dt, add);
+                }
+            }
+            else if (wishH.sqrMagnitude < 0.01f) { if (!launched) vH = Vector3.MoveTowards(vH, Vector3.zero, airStop * dt); }
             else if (vH.magnitude > top)
             {
                 vH = Vector3.RotateTowards(vH, wishH.normalized * vH.magnitude, accel * 0.2f * dt, 0f);
@@ -508,14 +574,18 @@ public class SlideController : MonoBehaviour
             else vH = Vector3.MoveTowards(vH, wishH * top, accel * dt);
             v.x = vH.x; v.z = vH.z;
 
+            if (parkour) v = WallRun(v, vyBefore, inp, dt);
+
             // pressing into a wall on the way down: slide down it slowly
-            if (touchingWall && v.y < -wallSlideSpeed && Vector3.Dot(wishH, -wallNormal) > 0.3f) v.y = -wallSlideSpeed;
+            if (!surf && !wallRunning && touchingWall && v.y < -wallSlideSpeed && Vector3.Dot(wishH, -wallNormal) > 0.3f) v.y = -wallSlideSpeed;
         }
+        if (Grounded) wallRunning = false;
 
         // jump buffering: a press shortly before you land still counts; coyote time: shortly after you run
         // off an edge you can still jump
         if (inp.jump) jumpBuffer = jumpBufferTime; else jumpBuffer -= dt;
         if (Grounded) sinceGrounded = 0f; else sinceGrounded += dt;
+        if (Grounded && jumpCooldown <= 0f) airJumped = false;
         bool canJump = (Grounded || sinceGrounded < coyoteTime) && jumpCooldown <= 0f;
         if (jumpBuffer > 0f && canJump)
         {
@@ -532,6 +602,17 @@ public class SlideController : MonoBehaviour
                 v.x = fl.x; v.z = fl.z;
             }
             StartJump();
+        }
+        else if (parkour && inp.jump && !Grounded && jumpCooldown <= 0f && WallKick(ref v)) { jumpBuffer = 0f; }
+        else if (inp.jump && doubleJumpOn && !airJumped && !Grounded && jumpCooldown <= 0f)
+        {
+            // Space again in the air: lifts you again (a full second hop from the top of a jump, only a little
+            // more if you're still going up fast), once till you land; on the board it's a kickflip
+            jumpBuffer = 0f;
+            v.y = Mathf.Max(v.y + doubleJumpBoost, doubleJumpSpeed);
+            airJumped = true;
+            holdingJump = false;
+            if (OnBoard && flip < 0f) flip = 0f;
         }
         else if (holdingJump)
         {
@@ -729,6 +810,196 @@ public class SlideController : MonoBehaviour
         if (!OnBoard && pickupBlock > 0f && Vector3.Distance(feet, board.position) < pickupRadius) pickupBlock = 0.3f;   // move away first
     }
 
+    // ---- parkour --------------------------------------------------------------------------------
+
+    // is there anything solid (other than you) overlapping this sphere?
+    bool Blocked(Vector3 at, float r)
+    {
+        foreach (var col in Physics.OverlapSphere(at, r, ~0, QueryTriggerInteraction.Ignore))
+            if (!col.transform.IsChildOf(transform)) return true;
+        return false;
+    }
+
+    // Holding W into something: low enough and you vault it (thin) or step up onto it (deep) straight from a run;
+    // in the air, a ledge within reach and you grab it and climb up. Returns true if a move started.
+    bool TryVaultOrClimb(SlideInput inp)
+    {
+        if (inp.forward < 0.5f || sliding || piloting != null) return false;
+        Vector3 look = Quaternion.Euler(0f, yaw, 0f) * Vector3.forward;
+        Vector3 vFlat = new Vector3(rb.linearVelocity.x, 0f, rb.linearVelocity.z);
+        float r = ball.radius;
+        Vector3 feet = rb.position - Vector3.up * r;
+        RaycastHit wh = default(RaycastHit);
+        bool found = false;
+        foreach (float h in new[] { 0f, 0.7f, 1.4f })   // knee, chest and head height
+        {
+            if (!Physics.SphereCast(rb.position + Vector3.up * h, 0.2f, look, out wh, 0.55f, ~0, QueryTriggerInteraction.Ignore)) continue;
+            if (wh.collider.transform.IsChildOf(transform) || Mathf.Abs(wh.normal.y) > 0.35f) continue;
+            Vector3 n = new Vector3(wh.normal.x, 0f, wh.normal.z).normalized;
+            if (Vector3.Dot(-n, look) < 0.55f) continue;
+            found = true;
+            break;
+        }
+        if (!found) return false;
+        Vector3 wn = new Vector3(wh.normal.x, 0f, wh.normal.z).normalized;
+        Vector3 into = -wn;
+        float reach = Grounded ? vaultHeight : mantleReach;
+        // the top of it, just in from the face
+        Vector3 face = new Vector3(wh.point.x, feet.y, wh.point.z);
+        RaycastHit th;
+        if (!Physics.Raycast(face + into * 0.3f + Vector3.up * (reach + 0.5f), Vector3.down, out th, reach + 0.5f - 0.25f, ~0, QueryTriggerInteraction.Ignore)) return false;
+        if (th.normal.y < 0.7f || th.collider.transform.IsChildOf(transform)) return false;
+        float topY = th.point.y, ledge = topY - feet.y;
+        if (ledge < 0.3f || ledge > reach) return false;
+        if (!Grounded && rb.linearVelocity.y > 7f) return false;   // still flying up past it
+        // room to come up over the edge
+        if (Blocked(new Vector3(face.x, topY + r + 0.08f, face.z) + into * 0.45f, r * 0.85f)) return false;
+
+        float speed = vFlat.magnitude;
+        Vector3 dir = into;   // straight over it
+        // how deep is it? (a thin wall you go over; a block you step up onto)
+        float depth = -1f;
+        for (float d = 0.3f; d <= 1.8f; d += 0.15f)
+        {
+            RaycastHit dh;
+            Vector3 o = face + dir * d + Vector3.up * (ledge + 0.3f);
+            if (!Physics.Raycast(o, Vector3.down, out dh, 0.55f, ~0, QueryTriggerInteraction.Ignore)) { depth = d; break; }
+        }
+        Vector3 top = new Vector3(face.x, topY, face.z);
+        if (Grounded && depth > 0f && ledge <= vaultHeight && speed > 3.5f)
+        {
+            // vault (from a run, over something thin onto ground not far below): over and down, keeping your speed
+            RaycastHit lh;
+            Vector3 beyond = face + dir * (depth + 0.8f);
+            float landY = Physics.Raycast(beyond + Vector3.up * (ledge + 0.3f), Vector3.down, out lh, ledge + 8f, ~0, QueryTriggerInteraction.Ignore) ? lh.point.y : feet.y - 6f;
+            if (landY > topY - 2.5f && !Blocked(beyond + Vector3.up * (Mathf.Max(landY, feet.y) + r + 0.1f - beyond.y), r * 0.85f))
+            {
+                float s = Mathf.Max(speed, sprintSpeed * 0.9f);
+                Vector3 mid = top + dir * (depth * 0.5f) + Vector3.up * (r + 0.25f);
+                Vector3 to = new Vector3(beyond.x, Mathf.Max(landY, topY - 1.2f) + r + 0.05f, beyond.z);
+                float dist = Vector3.Distance(rb.position, mid) + Vector3.Distance(mid, to);
+                StartMove(rb.position, mid, to, Mathf.Clamp(dist / s, 0.18f, 0.5f), dir * s + Vector3.up * Mathf.Min(0f, rb.linearVelocity.y), "VAULT");
+                return true;
+            }
+        }
+        // climb: up the face, then over the edge onto the top
+        Vector3 up = new Vector3(rb.position.x, topY + r + 0.08f, rb.position.z);
+        Vector3 on = top + into * 0.55f + Vector3.up * (r + 0.03f);
+        float dur = Grounded ? 0.2f + 0.08f * ledge : 0.28f + 0.12f * ledge;
+        StartMove(rb.position, up, on, dur, into * Mathf.Clamp(speed * 0.6f, 2f, walkSpeed), Grounded ? "STEP UP" : "CLIMB");
+        return true;
+    }
+
+    void StartMove(Vector3 from, Vector3 mid, Vector3 to, float dur, Vector3 exit, string kind)
+    {
+        moveFrom = from; moveMid = mid; moveTo = to; moveDur = dur; moveExit = exit; moveT = 0f;
+        ParkourMove = kind;
+        wallRunning = false;
+        sliding = false;
+        holdingJump = false;
+        jumpBuffer = 0f;
+        Grounded = false;
+    }
+
+    Vector3 MovePoint(float t)
+    {
+        // up (or over) to the middle point in the first half, across to the end in the second
+        if (t < 0.5f) return Vector3.Lerp(moveFrom, moveMid, Mathf.SmoothStep(0f, 1f, t * 2f));
+        return Vector3.Lerp(moveMid, moveTo, Mathf.SmoothStep(0f, 1f, (t - 0.5f) * 2f));
+    }
+
+    void ScriptedMove(float dt)
+    {
+        float t0 = moveT;
+        moveT = Mathf.Min(1f, moveT + dt / moveDur);
+        Vector3 p0 = MovePoint(t0), p1 = MovePoint(moveT);
+        rb.position = p0; transform.position = p0;
+        if (moveT >= 1f)
+        {
+            moveT = -1f;
+            rb.position = moveTo; transform.position = moveTo;
+            rb.linearVelocity = moveExit;
+            sinceGrounded = 0f;   // (coyote time off the top of a climb)
+            return;
+        }
+        rb.linearVelocity = (p1 - p0) / dt - Physics.gravity * dt;   // (the physics step adds gravity back)
+        Grounded = false;
+    }
+
+    // the nearest wall beside you within `reach` of your surface
+    bool WallNear(float reach, out Vector3 normal)
+    {
+        normal = Vector3.zero;
+        float best = float.MaxValue;
+        for (int i = 0; i < 12; i++)
+        {
+            Vector3 d = Quaternion.Euler(0f, i * 30f, 0f) * Vector3.forward;
+            RaycastHit h;
+            if (!Physics.SphereCast(rb.position, ball.radius * 0.7f, d, out h, reach + ball.radius * 0.3f, ~0, QueryTriggerInteraction.Ignore)) continue;
+            if (Mathf.Abs(h.normal.y) > 0.3f || h.distance >= best || h.collider.transform.IsChildOf(transform)) continue;
+            best = h.distance;
+            normal = new Vector3(h.normal.x, 0f, h.normal.z).normalized;
+        }
+        return best < float.MaxValue;
+    }
+
+    static bool SameWall(Vector3 a, Vector3 b) { return a != Vector3.zero && Vector3.Dot(a, b) > 0.8f; }
+
+    // in the air with W held, running along a wall at speed: you run along it, barely sinking, for a while
+    Vector3 WallRun(Vector3 v, float vyBefore, SlideInput inp, float dt)
+    {
+        Vector3 n;
+        bool wall = WallNear(0.6f, out n);
+        Vector3 vH = new Vector3(v.x, 0f, v.z);
+        Vector3 along = wall ? vH - n * Vector3.Dot(vH, n) : vH;
+        if (wallRunning)
+        {
+            wallRunLeft -= dt;
+            if (!wall || inp.forward < 0.5f || wallRunLeft <= 0f || along.magnitude < 2.5f || Vector3.Dot(n, wallRunNormal) < 0.7f)
+                wallRunning = false;
+        }
+        else if (wall && inp.forward > 0.5f && sinceGrounded > 0.08f && along.magnitude >= wallRunMinSpeed
+                 && Mathf.Abs(Vector3.Dot(n, vH.normalized)) < 0.65f && !SameWall(lastWallRun, n)
+                 && !Physics.Raycast(rb.position, Vector3.down, 1.1f, ~0, QueryTriggerInteraction.Ignore))
+        {
+            wallRunning = true;
+            wallRunLeft = wallRunTime;
+            wallRunNormal = n;
+            lastWallRun = n;
+            ParkourMove = "WALL RUN";
+            vyBefore = Mathf.Max(vyBefore, 2.5f);   // a little lift as you hit it
+        }
+        if (!wallRunning) return v;
+        wallRunNormal = n;
+        // along the wall, held against it; gravity mostly off (you sink slowly, faster near the end)
+        float keep = Mathf.Max(along.magnitude, wallRunMinSpeed);
+        Vector3 run = along.normalized * keep - n * 1.5f;
+        float sink = wallRunLeft > wallRunTime * 0.4f ? 3f : 9f;
+        float vy = Mathf.MoveTowards(vyBefore, -2.5f, sink * dt);
+        return new Vector3(run.x, vy, run.z) - Physics.gravity * dt;
+    }
+
+    // Space on (or right by) a wall in the air: kick off it, up and away. Not off the same wall twice running.
+    bool WallKick(ref Vector3 v)
+    {
+        Vector3 n;
+        if (wallRunning) n = wallRunNormal;
+        else if (!WallNear(0.45f, out n)) return false;
+        if (SameWall(lastKick, n)) return false;
+        Vector3 vH = new Vector3(v.x, 0f, v.z);
+        Vector3 along = vH - n * Vector3.Dot(vH, n);
+        Vector3 h = along * (wallRunning ? 1f : 0.6f) + n * wallJumpOut;
+        v = new Vector3(h.x, wallJumpUp, h.z);
+        lastKick = n;
+        lastWallRun = n;
+        wallRunning = false;
+        kickLock = 0.22f;
+        ParkourMove = "WALL JUMP";
+        StartJump();
+        holdingJump = false;
+        return true;
+    }
+
     // ---- rails --------------------------------------------------------------------------------
 
     float RideHeight(SkateRail r) { return r.radius + ball.radius; }
@@ -883,7 +1154,10 @@ public class SlideController : MonoBehaviour
         visualOffset = Vector3.Lerp(visualOffset, Vector3.zero, 1f - Mathf.Exp(-16f * dt));
         if (cam != null)
         {
-            Quaternion view = Quaternion.Euler(pitch, yaw, 0f);
+            // running along a wall: the view leans away from it
+            float rollTo = wallRunning ? -Vector3.Dot(wallRunNormal, Quaternion.Euler(0f, yaw, 0f) * Vector3.right) * 11f : 0f;
+            camRoll = Mathf.Lerp(camRoll, rollTo, 1f - Mathf.Exp(-10f * dt));
+            Quaternion view = Quaternion.Euler(pitch, yaw, camRoll);
             eyeDrop = Mathf.Lerp(eyeDrop, sliding ? 0.65f : 0f, 1f - Mathf.Exp(-12f * dt));
             Vector3 eye = transform.position + visualOffset + Vector3.up * (eyeHeight - ball.radius - eyeDrop + (OnBoard ? 0.2f : 0f));
             shake = Mathf.Max(0f, shake - dt);

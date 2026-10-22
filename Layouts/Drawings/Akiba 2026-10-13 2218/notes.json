@@ -1,0 +1,115 @@
+{
+    "level": "Akiba",
+    "made": "2026-10-13 22:18:54",
+    "colours": "black = platforms, buildings, ground; yellow = rails; cyan = speed rails; pink = jump pads; orange = ramps; blue = buses, moving things; green = your route through it; red = important / danger",
+    "pages": [
+        {
+            "title": "FROM ABOVE",
+            "view": "above",
+            "picture": "1-from-above.png",
+            "drawingOnly": "1-from-above (drawing only).png",
+            "howItLinesUp": "Looking straight down. Left to right on the page is +z in the level (the start end on the left); top of the page is -x. The middle of the page is centre (x, z).",
+            "drewSomething": true,
+            "centre": {
+                "x": 0.0,
+                "y": 140.0,
+                "z": 0.0
+            },
+            "cameraPosition": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0
+            },
+            "cameraForward": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0
+            },
+            "worldWidth": 335.9999694824219,
+            "worldHeight": 188.99998474121095,
+            "cameraFov": 0.0,
+            "labels": []
+        },
+        {
+            "title": "FROM THE SIDE",
+            "view": "side",
+            "picture": "2-from-the-side.png",
+            "drawingOnly": "2-from-the-side (drawing only).png",
+            "howItLinesUp": "Looking across the level towards -x, cut through the middle. Left to right on the page is +z; up the page is up. The middle of the page is centre (its y is the height there).",
+            "drewSomething": true,
+            "centre": {
+                "x": 0.0,
+                "y": 87.89999389648438,
+                "z": 0.0
+            },
+            "cameraPosition": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0
+            },
+            "cameraForward": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0
+            },
+            "worldWidth": 335.9999694824219,
+            "worldHeight": 188.99998474121095,
+            "cameraFov": 0.0,
+            "labels": []
+        },
+        {
+            "title": "WHAT YOU SAW",
+            "view": "your view",
+            "picture": "3-what-you-saw.png",
+            "drawingOnly": "3-what-you-saw (drawing only).png",
+            "howItLinesUp": "The view from cameraPosition looking along cameraForward (vertical field of view cameraFov).",
+            "drewSomething": false,
+            "centre": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0
+            },
+            "cameraPosition": {
+                "x": 9.304670333862305,
+                "y": 3.4661507606506349,
+                "z": -50.98332214355469
+            },
+            "cameraForward": {
+                "x": -0.10234980285167694,
+                "y": -0.5606390237808228,
+                "z": 0.8217106461524963
+            },
+            "worldWidth": 0.0,
+            "worldHeight": 0.0,
+            "cameraFov": 79.9531021118164,
+            "labels": []
+        },
+        {
+            "title": "ANYTHING ELSE",
+            "view": "blank",
+            "picture": "4-anything-else.png",
+            "drawingOnly": "4-anything-else (drawing only).png",
+            "howItLinesUp": "A blank page.",
+            "drewSomething": false,
+            "centre": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0
+            },
+            "cameraPosition": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0
+            },
+            "cameraForward": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0
+            },
+            "worldWidth": 0.0,
+            "worldHeight": 0.0,
+            "cameraFov": 0.0,
+            "labels": []
+        }
+    ]
+}
